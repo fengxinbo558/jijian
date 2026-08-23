@@ -206,7 +206,7 @@ flowchart TB
 
 ## 10. 技术形态
 
-- Python 3.12 单进程服务。
+- Python 3.9+ 单进程服务，兼容当前机器的系统 Python。
 - 使用标准库 HTTP 服务、JSON、SQLite 和日志组件，避免首版安装大型依赖。
 - 前端使用原生 HTML、CSS 和 JavaScript，不引入前端构建链。
 - 浏览器读取上传文件内容后以 JSON 提交，后端不需要 multipart 依赖。
@@ -253,4 +253,3 @@ flowchart TB
 - SQLite 可保存事件，重启服务后数据仍在。
 - 没有模型密钥时仍可完整演示；配置模型后可获得 AI 增强结论。
 - 有自动测试和简明启动说明。
-
