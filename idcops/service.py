@@ -1,0 +1,334 @@
+"""Application service: normalize, analyze, correlate, and persist incidents."""
+
+from __future__ import annotations
+
+import copy
+import hashlib
+import uuid
+from typing import Any, Dict, Iterable, List, Mapping, Optional
+
+from .ai import AIEnricher
+from .models import NormalizedInput, RuleAnalysis, utc_now
+from .rules import analyze_rules
+from .store import IncidentStore
+
+
+SEVERITY_RANK = {"unknown": 0, "info": 1, "warning": 2, "critical": 3}
+
+
+def _coalesce(*values: Any) -> Any:
+    for value in values:
+        if value not in (None, ""):
+            return value
+    return ""
+
+
+def _device_from(payload: Mapping[str, Any]) -> Dict[str, Any]:
+    device = payload.get("device") if isinstance(payload.get("device"), Mapping) else {}
+    return {
+        "sn": _coalesce(device.get("sn"), payload.get("sn")),
+        "name": _coalesce(device.get("name"), payload.get("device_name"), payload.get("hostname")),
+        "rack_position": _coalesce(
+            device.get("rack_position"), payload.get("rack_position"), payload.get("rack")
+        ),
+        "device_type": _coalesce(device.get("device_type"), payload.get("device_type"), "unknown"),
+        "ip": _coalesce(device.get("ip"), payload.get("ip"), payload.get("ilo_ip")),
+    }
+
+
+def _operation_from(payload: Mapping[str, Any]) -> Dict[str, Any]:
+    context = (
+        payload.get("operation_context")
+        if isinstance(payload.get("operation_context"), Mapping)
+        else {}
+    )
+    return {
+        "from_reinstall": _coalesce(
+            context.get("from_reinstall"), payload.get("from_reinstall"), "unknown"
+        ),
+        "uid_status": _coalesce(context.get("uid_status"), payload.get("uid_status"), "unknown"),
+        "power_permission": _coalesce(
+            context.get("power_permission"), payload.get("power_permission"), "unknown"
+        ),
+        "interface_person": _coalesce(
+            context.get("interface_person"), payload.get("interface_person")
+        ),
+        "interface_team": _coalesce(context.get("interface_team"), payload.get("interface_team")),
+    }
+
+
+def normalize_input(source: str, payload: Mapping[str, Any]) -> NormalizedInput:
+    """Convert endpoint-specific payloads to one strict input contract."""
+
+    labels = dict(payload.get("labels", {})) if isinstance(payload.get("labels"), Mapping) else {}
+    if "cc_required" in payload:
+        labels["cc_required"] = payload["cc_required"]
+    if "incident_key" in payload:
+        labels["incident_key"] = payload["incident_key"]
+
+    if source == "monitor":
+        summary = _coalesce(payload.get("summary"), payload.get("title"), payload.get("message"))
+        raw_text = _coalesce(payload.get("raw_text"), payload.get("details"), payload.get("message"), summary)
+    elif source == "log":
+        raw_text = _coalesce(payload.get("raw_text"), payload.get("log_text"), payload.get("content"))
+        summary = _coalesce(payload.get("summary"), "日志中发现异常" if raw_text else "")
+    elif source == "onsite":
+        raw_text = _coalesce(payload.get("raw_text"), payload.get("observation"), payload.get("description"))
+        summary = _coalesce(payload.get("summary"), "现场发现异常" if raw_text else "")
+    else:
+        raise ValueError("unsupported source")
+
+    return NormalizedInput.from_mapping(
+        {
+            "source": source,
+            "event_time": payload.get("event_time"),
+            "site": _coalesce(payload.get("site"), payload.get("site_code")),
+            "severity": payload.get("severity"),
+            "device": _device_from(payload),
+            "summary": summary,
+            "raw_text": raw_text,
+            "labels": labels,
+            "operation_context": _operation_from(payload),
+        }
+    )
+
+
+class IncidentService:
+    def __init__(self, store: IncidentStore, ai: Optional[AIEnricher] = None) -> None:
+        self.store = store
+        self.ai = ai or AIEnricher()
+
+    def ingest(self, source: str, payload: Mapping[str, Any]) -> Dict[str, Any]:
+        event = normalize_input(source, payload)
+        analysis = analyze_rules(event)
+        enriched = self.ai.enrich(event, analysis)
+        analysis_dict = self._combine_analysis(analysis, enriched)
+        correlation_key = self._correlation_key(event, analysis.category)
+        existing = self.store.find_merge_candidate(event, analysis.category, correlation_key)
+        if existing:
+            update = self._merge(existing, event, analysis, analysis_dict)
+            return self.store.merge_incident(existing["id"], update, event)
+        incident = self._new_incident(event, analysis, analysis_dict, correlation_key)
+        return self.store.create_incident(incident, event)
+
+    @staticmethod
+    def _combine_analysis(
+        analysis: RuleAnalysis, enriched: Optional[Mapping[str, Any]]
+    ) -> Dict[str, Any]:
+        value = analysis.to_dict()
+        value["ai_mode"] = "rule"
+        if enriched:
+            for key in (
+                "impact_summary",
+                "candidate_causes",
+                "suggestions",
+                "missing_information",
+            ):
+                if key in enriched:
+                    value[key] = copy.deepcopy(enriched[key])
+            value["ai_mode"] = "model_enhanced"
+        return value
+
+    @staticmethod
+    def _correlation_key(event: NormalizedInput, category: str) -> str:
+        explicit = str(event.labels.get("incident_key", "")).strip()
+        if explicit:
+            return "explicit:" + explicit
+        identity = event.device.identity_key() or "unidentified"
+        material = f"{event.site}|{identity}|{category}".encode("utf-8")
+        return "auto:" + hashlib.sha256(material).hexdigest()[:20]
+
+    @staticmethod
+    def _identity_keys(devices: Iterable[Mapping[str, Any]]) -> str:
+        keys: List[str] = []
+        for device in devices:
+            identity = str(
+                device.get("sn")
+                or device.get("name")
+                or device.get("ip")
+                or device.get("rack_position")
+                or ""
+            )
+            if identity and identity not in keys:
+                keys.append(identity)
+        return "".join(f"|{key}|" for key in keys)
+
+    @staticmethod
+    def _unique_devices(devices: Iterable[Mapping[str, Any]]) -> List[Dict[str, Any]]:
+        result: List[Dict[str, Any]] = []
+        seen = set()
+        for device in devices:
+            value = dict(device)
+            identity = (
+                value.get("sn"),
+                value.get("name"),
+                value.get("ip"),
+                value.get("rack_position"),
+            )
+            if identity in seen or not any(identity):
+                continue
+            seen.add(identity)
+            result.append(value)
+        return result
+
+    @staticmethod
+    def _unique_evidence(evidence: Iterable[Mapping[str, Any]]) -> List[Dict[str, Any]]:
+        result: List[Dict[str, Any]] = []
+        seen = set()
+        for item in evidence:
+            text = str(item.get("text", ""))
+            if not text or text in seen:
+                continue
+            seen.add(text)
+            result.append(
+                {"id": f"E{len(result) + 1}", "source": item.get("source", "unknown"), "text": text}
+            )
+        return result[:30]
+
+    @staticmethod
+    def _power_gate(event: NormalizedInput, analysis: RuleAnalysis) -> Dict[str, Any]:
+        context = event.operation_context
+        permission = context.power_permission.lower()
+        if context.from_reinstall.lower() in {"yes", "是", "true", "1"} and permission == "unknown":
+            permission = "allowed"
+        if context.from_reinstall.lower() in {"no", "否", "false", "0"} and permission == "unknown":
+            permission = "confirm"
+
+        missing_identity = analysis.requires_onsite and event.device.device_type in {
+            "server",
+            "switch",
+            "unknown",
+        } and (not event.device.sn or not event.device.rack_position)
+        if missing_identity:
+            gate = "stop"
+            message = "设备身份或位置不完整，停止现场操作并联系接口人确认"
+        elif permission == "forbidden":
+            gate = "stop"
+            message = "当前禁止断电或影响供电的操作"
+        elif permission == "allowed":
+            gate = "ready"
+            message = "已提供操作许可；仍需现场核对完整 SN、机架位和操作对象"
+        else:
+            gate = "confirm"
+            message = "操作或断电许可未确认，联系接口人后再操作"
+        return {"value": permission, "gate": gate, "message": message}
+
+    def _onsite_card(self, event: NormalizedInput, analysis: RuleAnalysis) -> Dict[str, Any]:
+        power = self._power_gate(event, analysis)
+        return {
+            "required": analysis.requires_onsite,
+            "site": event.site,
+            "device": event.device.to_dict(),
+            "uid_status": event.operation_context.uid_status,
+            "from_reinstall": event.operation_context.from_reinstall,
+            "power": power,
+            "interface_person": event.operation_context.interface_person,
+            "interface_team": event.operation_context.interface_team,
+            "identity_complete": bool(event.device.sn and event.device.rack_position),
+            "missing_information": list(analysis.missing_information),
+            "actions": list(analysis.suggestions),
+            "stop_condition": "身份、位置、业务状态或许可不一致时立即停止并联系接口人",
+        }
+
+    @staticmethod
+    def _cc_reminder(analysis: RuleAnalysis, existing: Optional[Mapping[str, Any]] = None) -> Dict[str, Any]:
+        if existing and existing.get("required"):
+            return dict(existing)
+        if not analysis.cc_required:
+            return {"required": False}
+        return {
+            "required": True,
+            "message": "请立即按现有 CC 流程拨打电话",
+            "reason": analysis.cc_reason,
+            "triggered_at": utc_now(),
+        }
+
+    @staticmethod
+    def _communication(
+        event: NormalizedInput, analysis: RuleAnalysis, devices: List[Mapping[str, Any]]
+    ) -> str:
+        identities = []
+        for device in devices:
+            parts = [
+                str(device.get("sn") or "SN未知"),
+                str(device.get("rack_position") or "机架位未知"),
+                str(device.get("name") or "设备名未知"),
+            ]
+            identities.append(" / ".join(parts))
+        identity_text = "；".join(identities) or "设备身份待补充"
+        return (
+            f"[{event.site or '机房待确认'}] {analysis.title}。"
+            f"设备：{identity_text}。现象：{event.summary}。"
+            f"当前判断：{analysis.candidate_causes[0]['title']}（需结合证据继续确认）。"
+        )
+
+    def _new_incident(
+        self,
+        event: NormalizedInput,
+        analysis: RuleAnalysis,
+        analysis_dict: Dict[str, Any],
+        correlation_key: str,
+    ) -> Dict[str, Any]:
+        now = utc_now()
+        devices = self._unique_devices([event.device.to_dict()])
+        incident_id = "INC-" + now[:10].replace("-", "") + "-" + uuid.uuid4().hex[:6].upper()
+        return {
+            "id": incident_id,
+            "title": analysis.title,
+            "status": "new",
+            "severity": analysis.severity,
+            "category": analysis.category,
+            "site": event.site,
+            "summary": event.summary,
+            "correlation_key": correlation_key,
+            "identity_keys": self._identity_keys(devices),
+            "devices": devices,
+            "evidence": self._unique_evidence(analysis.evidence),
+            "analysis": analysis_dict,
+            "onsite_card": self._onsite_card(event, analysis),
+            "cc_reminder": self._cc_reminder(analysis),
+            "communication_text": self._communication(event, analysis, devices),
+            "created_at": now,
+            "updated_at": now,
+        }
+
+    def _merge(
+        self,
+        existing: Mapping[str, Any],
+        event: NormalizedInput,
+        analysis: RuleAnalysis,
+        analysis_dict: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        devices = self._unique_devices(list(existing.get("devices", [])) + [event.device.to_dict()])
+        evidence = self._unique_evidence(list(existing.get("evidence", [])) + analysis.evidence)
+        severity = max(
+            (str(existing.get("severity", "unknown")), analysis.severity),
+            key=lambda item: SEVERITY_RANK.get(item, 0),
+        )
+        analysis_dict["evidence"] = evidence
+        onsite_card = self._onsite_card(event, analysis)
+        if not analysis.requires_onsite and existing.get("onsite_card", {}).get("required"):
+            onsite_card = dict(existing["onsite_card"])
+        return {
+            "title": existing.get("title") or analysis.title,
+            "severity": severity,
+            "summary": existing.get("summary") or event.summary,
+            "identity_keys": self._identity_keys(devices),
+            "devices": devices,
+            "evidence": evidence,
+            "analysis": analysis_dict,
+            "onsite_card": onsite_card,
+            "cc_reminder": self._cc_reminder(analysis, existing.get("cc_reminder")),
+            "communication_text": self._communication(event, analysis, devices),
+            "updated_at": utc_now(),
+        }
+
+    def list_incidents(self) -> List[Dict[str, Any]]:
+        return self.store.list_incidents()
+
+    def get_incident(self, incident_id: str) -> Optional[Dict[str, Any]]:
+        return self.store.get_incident(incident_id)
+
+    def update_status(self, incident_id: str, status: str) -> Optional[Dict[str, Any]]:
+        return self.store.update_status(incident_id, status)
+

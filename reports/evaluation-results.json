@@ -1,0 +1,459 @@
+{
+  "started_at": "2026-08-23T11:05:51+00:00",
+  "finished_at": "2026-08-23T11:05:51+00:00",
+  "summary": {
+    "questions_passed": 12,
+    "questions_total": 12,
+    "question_pass_rate": 1.0,
+    "checks_passed": 54,
+    "checks_total": 54,
+    "check_pass_rate": 1.0
+  },
+  "results": [
+    {
+      "id": "Q01",
+      "title": "磁盘介质错误与现场安全门",
+      "passed": true,
+      "checks": [
+        {
+          "name": "故障分类",
+          "actual": "hardware",
+          "expected": "hardware",
+          "passed": true
+        },
+        {
+          "name": "需要现场介入",
+          "actual": true,
+          "expected": true,
+          "passed": true
+        },
+        {
+          "name": "CC提醒",
+          "actual": false,
+          "expected": false,
+          "passed": true
+        },
+        {
+          "name": "现场安全门",
+          "actual": "confirm",
+          "expected": "confirm",
+          "passed": true
+        },
+        {
+          "name": "完整SN",
+          "actual": "6CU318Z4K20260823001",
+          "expected": "6CU318Z4K20260823001",
+          "passed": true
+        },
+        {
+          "name": "证据关键词",
+          "actual": true,
+          "expected": true,
+          "passed": true
+        }
+      ],
+      "incident_ids": [
+        "INC-20260823-A3668B"
+      ]
+    },
+    {
+      "id": "Q02",
+      "title": "OOM不应误判成物理内存条故障",
+      "passed": true,
+      "checks": [
+        {
+          "name": "故障分类",
+          "actual": "system",
+          "expected": "system",
+          "passed": true
+        },
+        {
+          "name": "需要现场介入",
+          "actual": false,
+          "expected": false,
+          "passed": true
+        },
+        {
+          "name": "CC提醒",
+          "actual": false,
+          "expected": false,
+          "passed": true
+        },
+        {
+          "name": "根因候选关键词",
+          "actual": true,
+          "expected": true,
+          "passed": true
+        }
+      ],
+      "incident_ids": [
+        "INC-20260823-5803B5"
+      ]
+    },
+    {
+      "id": "Q03",
+      "title": "高温本身不自动触发CC",
+      "passed": true,
+      "checks": [
+        {
+          "name": "故障分类",
+          "actual": "facility",
+          "expected": "facility",
+          "passed": true
+        },
+        {
+          "name": "需要现场介入",
+          "actual": true,
+          "expected": true,
+          "passed": true
+        },
+        {
+          "name": "CC提醒",
+          "actual": false,
+          "expected": false,
+          "passed": true
+        },
+        {
+          "name": "现场安全门",
+          "actual": "confirm",
+          "expected": "confirm",
+          "passed": true
+        }
+      ],
+      "incident_ids": [
+        "INC-20260823-DFDA00"
+      ]
+    },
+    {
+      "id": "Q04",
+      "title": "显式CC条件只产生一次提醒",
+      "passed": true,
+      "checks": [
+        {
+          "name": "故障分类",
+          "actual": "facility",
+          "expected": "facility",
+          "passed": true
+        },
+        {
+          "name": "需要现场介入",
+          "actual": true,
+          "expected": true,
+          "passed": true
+        },
+        {
+          "name": "CC提醒",
+          "actual": true,
+          "expected": true,
+          "passed": true
+        },
+        {
+          "name": "CC提醒文本",
+          "actual": "请立即按现有 CC 流程拨打电话",
+          "expected": "请立即按现有 CC 流程拨打电话",
+          "passed": true
+        }
+      ],
+      "incident_ids": [
+        "INC-20260823-EF47F6"
+      ]
+    },
+    {
+      "id": "Q05",
+      "title": "交换机链路故障保留四类候选",
+      "passed": true,
+      "checks": [
+        {
+          "name": "故障分类",
+          "actual": "network",
+          "expected": "network",
+          "passed": true
+        },
+        {
+          "name": "需要现场介入",
+          "actual": true,
+          "expected": true,
+          "passed": true
+        },
+        {
+          "name": "现场安全门",
+          "actual": "stop",
+          "expected": "stop",
+          "passed": true
+        },
+        {
+          "name": "根因候选关键词",
+          "actual": true,
+          "expected": true,
+          "passed": true
+        },
+        {
+          "name": "建议关键词",
+          "actual": true,
+          "expected": true,
+          "passed": true
+        }
+      ],
+      "incident_ids": [
+        "INC-20260823-A47506"
+      ]
+    },
+    {
+      "id": "Q06",
+      "title": "应用端口冲突优先远程处理",
+      "passed": true,
+      "checks": [
+        {
+          "name": "故障分类",
+          "actual": "application",
+          "expected": "application",
+          "passed": true
+        },
+        {
+          "name": "需要现场介入",
+          "actual": false,
+          "expected": false,
+          "passed": true
+        },
+        {
+          "name": "CC提醒",
+          "actual": false,
+          "expected": false,
+          "passed": true
+        },
+        {
+          "name": "根因候选关键词",
+          "actual": true,
+          "expected": true,
+          "passed": true
+        }
+      ],
+      "incident_ids": [
+        "INC-20260823-A722B9"
+      ]
+    },
+    {
+      "id": "Q07",
+      "title": "换内存无效后保留主板候选",
+      "passed": true,
+      "checks": [
+        {
+          "name": "故障分类",
+          "actual": "hardware",
+          "expected": "hardware",
+          "passed": true
+        },
+        {
+          "name": "需要现场介入",
+          "actual": true,
+          "expected": true,
+          "passed": true
+        },
+        {
+          "name": "事件数量",
+          "actual": 1,
+          "expected": 1,
+          "passed": true
+        },
+        {
+          "name": "输入证据数",
+          "actual": 2,
+          "expected": 2,
+          "passed": true
+        },
+        {
+          "name": "根因候选关键词",
+          "actual": true,
+          "expected": true,
+          "passed": true
+        }
+      ],
+      "incident_ids": [
+        "INC-20260823-5C9262"
+      ]
+    },
+    {
+      "id": "Q08",
+      "title": "现场异常但身份缺失必须停止",
+      "passed": true,
+      "checks": [
+        {
+          "name": "故障分类",
+          "actual": "hardware",
+          "expected": "hardware",
+          "passed": true
+        },
+        {
+          "name": "需要现场介入",
+          "actual": true,
+          "expected": true,
+          "passed": true
+        },
+        {
+          "name": "现场安全门",
+          "actual": "stop",
+          "expected": "stop",
+          "passed": true
+        },
+        {
+          "name": "缺失信息",
+          "actual": true,
+          "expected": true,
+          "passed": true
+        }
+      ],
+      "incident_ids": [
+        "INC-20260823-C6C04B"
+      ]
+    },
+    {
+      "id": "Q09",
+      "title": "两台机器同一事故自动合并",
+      "passed": true,
+      "checks": [
+        {
+          "name": "故障分类",
+          "actual": "network",
+          "expected": "network",
+          "passed": true
+        },
+        {
+          "name": "CC提醒",
+          "actual": false,
+          "expected": false,
+          "passed": true
+        },
+        {
+          "name": "影响设备数",
+          "actual": 2,
+          "expected": 2,
+          "passed": true
+        },
+        {
+          "name": "事件数量",
+          "actual": 1,
+          "expected": 1,
+          "passed": true
+        },
+        {
+          "name": "输入证据数",
+          "actual": 2,
+          "expected": 2,
+          "passed": true
+        }
+      ],
+      "incident_ids": [
+        "INC-20260823-F4D6E7"
+      ]
+    },
+    {
+      "id": "Q10",
+      "title": "不同SN的独立磁盘故障不得误合并",
+      "passed": true,
+      "checks": [
+        {
+          "name": "故障分类",
+          "actual": "hardware",
+          "expected": "hardware",
+          "passed": true
+        },
+        {
+          "name": "影响设备数",
+          "actual": 1,
+          "expected": 1,
+          "passed": true
+        },
+        {
+          "name": "事件数量",
+          "actual": 2,
+          "expected": 2,
+          "passed": true
+        }
+      ],
+      "incident_ids": [
+        "INC-20260823-80913A",
+        "INC-20260823-92063B"
+      ]
+    },
+    {
+      "id": "Q11",
+      "title": "从重装中发起仍不能绕过身份核对",
+      "passed": true,
+      "checks": [
+        {
+          "name": "故障分类",
+          "actual": "hardware",
+          "expected": "hardware",
+          "passed": true
+        },
+        {
+          "name": "需要现场介入",
+          "actual": true,
+          "expected": true,
+          "passed": true
+        },
+        {
+          "name": "现场安全门",
+          "actual": "ready",
+          "expected": "ready",
+          "passed": true
+        },
+        {
+          "name": "完整SN",
+          "actual": "REINSTALL20260823011",
+          "expected": "REINSTALL20260823011",
+          "passed": true
+        },
+        {
+          "name": "身份完整",
+          "actual": true,
+          "expected": true,
+          "passed": true
+        }
+      ],
+      "incident_ids": [
+        "INC-20260823-B69FA1"
+      ]
+    },
+    {
+      "id": "Q12",
+      "title": "现场输入未知现象应诚实标记证据不足",
+      "passed": true,
+      "checks": [
+        {
+          "name": "故障分类",
+          "actual": "unknown",
+          "expected": "unknown",
+          "passed": true
+        },
+        {
+          "name": "需要现场介入",
+          "actual": true,
+          "expected": true,
+          "passed": true
+        },
+        {
+          "name": "现场安全门",
+          "actual": "confirm",
+          "expected": "confirm",
+          "passed": true
+        },
+        {
+          "name": "候选状态",
+          "actual": true,
+          "expected": true,
+          "passed": true
+        },
+        {
+          "name": "最大置信度限制",
+          "actual": true,
+          "expected": true,
+          "passed": true
+        }
+      ],
+      "incident_ids": [
+        "INC-20260823-CE04A4"
+      ]
+    }
+  ]
+}

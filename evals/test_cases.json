@@ -1,0 +1,357 @@
+{
+  "version": "1.0",
+  "description": "独立于内置演练场景的首批IDC故障调查测试集",
+  "questions": [
+    {
+      "id": "Q01",
+      "title": "磁盘介质错误与现场安全门",
+      "prompt": "系统日志出现持续I/O错误，设备身份完整，但工单不是从重装中发起。系统应如何分类并约束现场操作？",
+      "inputs": [
+        {
+          "source": "log",
+          "payload": {
+            "site": "TJDM",
+            "sn": "6CU318Z4K20260823001",
+            "device_name": "tjdm-storage-017",
+            "rack_position": "TJDMD3-A-17-04",
+            "device_type": "server",
+            "severity": "critical",
+            "summary": "数据盘读取失败",
+            "log_text": "Aug 23 kernel: Buffer I/O error on dev sdc, logical block 8821\nsmartd: Device /dev/sdc: SMART Failure Predicted",
+            "from_reinstall": "no",
+            "uid_status": "on"
+          }
+        }
+      ],
+      "expected": {
+        "category": "hardware",
+        "requires_onsite": true,
+        "cc_required": false,
+        "gate": "confirm",
+        "sn_exact": "6CU318Z4K20260823001",
+        "evidence_contains": "I/O error"
+      }
+    },
+    {
+      "id": "Q02",
+      "title": "OOM不应误判成物理内存条故障",
+      "prompt": "Java进程被OOM killer终止，但没有ECC/MCE证据。系统是否会错误派现场更换内存？",
+      "inputs": [
+        {
+          "source": "log",
+          "payload": {
+            "site": "BJYZ",
+            "sn": "APP20260823002",
+            "device_name": "bjyz-api-022",
+            "rack_position": "BJYZD8-A-22-01",
+            "device_type": "server",
+            "summary": "Java服务突然退出",
+            "log_text": "kernel: Out of memory: Killed process 11902 (java) total-vm:18432112kB"
+          }
+        }
+      ],
+      "expected": {
+        "category": "system",
+        "requires_onsite": false,
+        "cc_required": false,
+        "candidate_contains": "进程内存"
+      }
+    },
+    {
+      "id": "Q03",
+      "title": "高温本身不自动触发CC",
+      "prompt": "监控发现温度升高，但输入未确认达到现有SOP的CC条件。系统能否只调查而不擅自提醒拨打CC？",
+      "inputs": [
+        {
+          "source": "monitor",
+          "payload": {
+            "site": "BJYZ",
+            "severity": "critical",
+            "device_type": "facility",
+            "summary": "冷通道温度持续升高",
+            "message": "temperature rising from 24C to 31C; server fans high"
+          }
+        }
+      ],
+      "expected": {
+        "category": "facility",
+        "requires_onsite": true,
+        "cc_required": false,
+        "gate": "confirm"
+      }
+    },
+    {
+      "id": "Q04",
+      "title": "显式CC条件只产生一次提醒",
+      "prompt": "现场按SOP确认需要CC通报。系统应显示电话提醒，但不创建电话处理步骤。",
+      "inputs": [
+        {
+          "source": "onsite",
+          "payload": {
+            "site": "BJYZ",
+            "severity": "critical",
+            "device_type": "facility",
+            "summary": "空调节点故障导致区域高温",
+            "observation": "空调停机，冷通道温度快速上升，已确认需要CC通报",
+            "cc_required": true
+          }
+        }
+      ],
+      "expected": {
+        "category": "facility",
+        "requires_onsite": true,
+        "cc_required": true,
+        "cc_message_exact": "请立即按现有 CC 流程拨打电话"
+      }
+    },
+    {
+      "id": "Q05",
+      "title": "交换机链路故障保留四类候选",
+      "prompt": "端口down并伴随Rx Power低告警，系统应保留本端、线缆/光纤和对端候选，而不是直接认定模块损坏。",
+      "inputs": [
+        {
+          "source": "monitor",
+          "payload": {
+            "site": "BJYZ",
+            "sn": "21023388NET20260805",
+            "device_name": "HB-BJYZD5-TOR-105.Int",
+            "rack_position": "BJYZD5-05-01-0A",
+            "device_type": "switch",
+            "severity": "critical",
+            "summary": "100GE1/0/28链路中断",
+            "message": "interface 100GE1/0/28 link down; Rx Power low alarm",
+            "power_permission": "forbidden",
+            "interface_team": "网络组"
+          }
+        }
+      ],
+      "expected": {
+        "category": "network",
+        "requires_onsite": true,
+        "gate": "stop",
+        "candidate_contains": "线缆/光纤",
+        "suggestion_contains": "光功率"
+      }
+    },
+    {
+      "id": "Q06",
+      "title": "应用端口冲突优先远程处理",
+      "prompt": "服务因端口被占用启动失败。系统应定位运行冲突，不要求现场物理操作。",
+      "inputs": [
+        {
+          "source": "log",
+          "payload": {
+            "site": "BJYZ",
+            "sn": "APP20260823006",
+            "device_name": "bjyz-order-006",
+            "rack_position": "BJYZD3-B-06-02",
+            "device_type": "server",
+            "summary": "订单服务启动失败",
+            "log_text": "systemd: order.service: Failed to start\njava.net.BindException: Address already in use: bind 0.0.0.0:8080"
+          }
+        }
+      ],
+      "expected": {
+        "category": "application",
+        "requires_onsite": false,
+        "cc_required": false,
+        "candidate_contains": "端口"
+      }
+    },
+    {
+      "id": "Q07",
+      "title": "换内存无效后保留主板候选",
+      "prompt": "日志先报ECC，现场换内存后仍无法启动。系统应合并两条证据并保留主板/控制器候选。",
+      "inputs": [
+        {
+          "source": "log",
+          "payload": {
+            "site": "BJYZ",
+            "sn": "MEMORY20260823007",
+            "device_name": "bjyz-compute-107",
+            "rack_position": "BJYZD6-C-07-03",
+            "device_type": "server",
+            "summary": "DIMM B1不可纠正错误",
+            "log_text": "EDAC MC1: Uncorrected memory error on channel B DIMM 1; MCE logged",
+            "incident_key": "EVAL-MEM-07",
+            "from_reinstall": "yes",
+            "uid_status": "on"
+          }
+        },
+        {
+          "source": "onsite",
+          "payload": {
+            "site": "BJYZ",
+            "sn": "MEMORY20260823007",
+            "device_name": "bjyz-compute-107",
+            "rack_position": "BJYZD6-C-07-03",
+            "device_type": "server",
+            "summary": "更换内存后仍不开机",
+            "observation": "已更换对应内存条并重新插拔，机器仍无法启动，需继续判断主板故障",
+            "incident_key": "EVAL-MEM-07",
+            "from_reinstall": "yes",
+            "uid_status": "on"
+          }
+        }
+      ],
+      "expected": {
+        "category": "hardware",
+        "requires_onsite": true,
+        "incident_count": 1,
+        "input_count": 2,
+        "candidate_contains": "主板"
+      }
+    },
+    {
+      "id": "Q08",
+      "title": "现场异常但身份缺失必须停止",
+      "prompt": "现场看到服务器故障灯，但没有完整SN和机架位。系统是否会阻止盲目操作？",
+      "inputs": [
+        {
+          "source": "onsite",
+          "payload": {
+            "site": "BJYZ",
+            "device_type": "server",
+            "severity": "warning",
+            "summary": "服务器故障灯亮",
+            "observation": "前面板告警灯亮，怀疑硬盘异常，标签暂时看不清"
+          }
+        }
+      ],
+      "expected": {
+        "category": "hardware",
+        "requires_onsite": true,
+        "gate": "stop",
+        "missing_contains": ["完整 SN", "机架位"]
+      }
+    },
+    {
+      "id": "Q09",
+      "title": "两台机器同一事故自动合并",
+      "prompt": "同一机柜两台服务器收到同一个上联链路事故编号。系统应合并为一个多设备事件。",
+      "inputs": [
+        {
+          "source": "monitor",
+          "payload": {
+            "site": "TJDM",
+            "sn": "NETGROUP20260823091",
+            "rack_position": "TJDMD2-A-09-01",
+            "device_type": "server",
+            "summary": "业务网口链路中断",
+            "message": "interface bond0 link down",
+            "incident_key": "UPLINK-TJDM-09"
+          }
+        },
+        {
+          "source": "monitor",
+          "payload": {
+            "site": "TJDM",
+            "sn": "NETGROUP20260823092",
+            "rack_position": "TJDMD2-A-09-02",
+            "device_type": "server",
+            "summary": "相邻服务器业务网口链路中断",
+            "message": "interface bond0 link down",
+            "incident_key": "UPLINK-TJDM-09"
+          }
+        }
+      ],
+      "expected": {
+        "category": "network",
+        "incident_count": 1,
+        "affected_count": 2,
+        "input_count": 2,
+        "cc_required": false
+      }
+    },
+    {
+      "id": "Q10",
+      "title": "不同SN的独立磁盘故障不得误合并",
+      "prompt": "相邻两台机器同时出现I/O错误，但没有共同事故编号。系统应保留两个独立事件。",
+      "inputs": [
+        {
+          "source": "log",
+          "payload": {
+            "site": "BJYZ",
+            "sn": "SEPARATE-DISK-1001",
+            "rack_position": "BJYZD7-A-10-01",
+            "device_type": "server",
+            "summary": "第一台磁盘错误",
+            "log_text": "kernel: I/O error, dev sda"
+          }
+        },
+        {
+          "source": "log",
+          "payload": {
+            "site": "BJYZ",
+            "sn": "SEPARATE-DISK-1002",
+            "rack_position": "BJYZD7-A-10-02",
+            "device_type": "server",
+            "summary": "第二台磁盘错误",
+            "log_text": "kernel: I/O error, dev sdb"
+          }
+        }
+      ],
+      "expected": {
+        "category": "hardware",
+        "incident_count": 2,
+        "affected_count": 1
+      }
+    },
+    {
+      "id": "Q11",
+      "title": "从重装中发起仍不能绕过身份核对",
+      "prompt": "工单从重装中发起且身份完整，可以进入现场核对；但系统仍应显示完整SN和机架位。",
+      "inputs": [
+        {
+          "source": "log",
+          "payload": {
+            "site": "BJYZ",
+            "sn": "REINSTALL20260823011",
+            "device_name": "bjyz-offline-011",
+            "rack_position": "BJYZD9-B-11-01",
+            "device_type": "server",
+            "summary": "离线机器NVMe介质错误",
+            "log_text": "nvme nvme0: media_errors=12; critical_warning=0x04",
+            "from_reinstall": "yes",
+            "uid_status": "on"
+          }
+        }
+      ],
+      "expected": {
+        "category": "hardware",
+        "requires_onsite": true,
+        "gate": "ready",
+        "sn_exact": "REINSTALL20260823011",
+        "identity_complete": true
+      }
+    },
+    {
+      "id": "Q12",
+      "title": "现场输入未知现象应诚实标记证据不足",
+      "prompt": "现场只描述机器有异响，没有日志和明确故障特征。系统不应编造确定根因。",
+      "inputs": [
+        {
+          "source": "onsite",
+          "payload": {
+            "site": "BJYZ",
+            "sn": "UNKNOWN20260823012",
+            "device_name": "bjyz-misc-012",
+            "rack_position": "BJYZD4-C-12-02",
+            "device_type": "server",
+            "summary": "机器内部出现间歇性异响",
+            "observation": "声音不连续，面板暂未看到明显告警灯",
+            "power_permission": "confirm"
+          }
+        }
+      ],
+      "expected": {
+        "category": "unknown",
+        "requires_onsite": true,
+        "gate": "confirm",
+        "candidate_status": "待确认",
+        "max_confidence": 0.35
+      }
+    }
+  ]
+}
+

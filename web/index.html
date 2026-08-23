@@ -1,0 +1,195 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>机鉴 · IDC AI 故障调查台</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="command-rail" aria-label="主导航">
+      <div class="brand" aria-label="机鉴 IDC AI 故障调查台">
+        <span class="brand-mark">机鉴</span>
+        <span class="brand-code">IDC·AI</span>
+      </div>
+      <nav class="rail-actions">
+        <button class="rail-button is-active" data-action="show-incidents" type="button">
+          <span class="rail-icon" aria-hidden="true">故</span>
+          <span>事件</span>
+        </button>
+        <button class="rail-button" data-action="open-ingest" type="button">
+          <span class="rail-icon" aria-hidden="true">接</span>
+          <span>接入</span>
+        </button>
+        <button class="rail-button" data-action="open-demos" type="button">
+          <span class="rail-icon" aria-hidden="true">演</span>
+          <span>演练</span>
+        </button>
+      </nav>
+      <div class="system-pulse" id="systemPulse" title="本地服务状态">
+        <span class="pulse-dot" aria-hidden="true"></span>
+        <span>本地</span>
+      </div>
+    </aside>
+
+    <aside class="incident-queue" aria-label="故障事件队列">
+      <header class="queue-header">
+        <div>
+          <p class="eyebrow">INCIDENT QUEUE</p>
+          <h1>故障队列</h1>
+        </div>
+        <button class="icon-button" id="refreshButton" type="button" aria-label="刷新事件">↻</button>
+      </header>
+
+      <div class="status-counts" aria-label="事件数量">
+        <button class="count-block is-active" data-filter="all" type="button">
+          <strong id="countAll">0</strong><span>全部</span>
+        </button>
+        <button class="count-block" data-filter="new" type="button">
+          <strong id="countNew">0</strong><span>新发现</span>
+        </button>
+        <button class="count-block" data-filter="processing" type="button">
+          <strong id="countProcessing">0</strong><span>处理中</span>
+        </button>
+        <button class="count-block" data-filter="resolved" type="button">
+          <strong id="countResolved">0</strong><span>已解决</span>
+        </button>
+      </div>
+
+      <label class="queue-search">
+        <span class="sr-only">搜索事件</span>
+        <input id="searchInput" type="search" placeholder="搜索 SN、机架位、设备名">
+        <span aria-hidden="true">⌕</span>
+      </label>
+
+      <div class="queue-list" id="incidentList" aria-live="polite"></div>
+    </aside>
+
+    <main class="workspace" id="workspace" tabindex="-1">
+      <header class="workspace-header">
+        <div>
+          <p class="eyebrow" id="workspaceKicker">INVESTIGATION DESK</p>
+          <p class="workspace-title" id="workspaceTitle">等待事件进入</p>
+        </div>
+        <div class="workspace-actions">
+          <button class="secondary-button" data-action="open-ingest" type="button">接入数据</button>
+          <button class="primary-button" data-action="open-demos" type="button">运行演练</button>
+        </div>
+      </header>
+      <section id="incidentDetail" class="detail-stage" aria-live="polite">
+        <div class="empty-state">
+          <div class="empty-rack" aria-hidden="true">
+            <span></span><span></span><span></span><span></span><span></span>
+          </div>
+          <p class="eyebrow">NO ACTIVE SELECTION</p>
+          <h2>让第一条证据进入调查台</h2>
+          <p>接收监控告警、粘贴日志，或由现场上报设备异常。系统会把三种来源整理成同一个事件。</p>
+          <div class="empty-actions">
+            <button class="primary-button" data-action="open-ingest" type="button">接入第一条数据</button>
+            <button class="text-button" data-action="open-demos" type="button">先看内置演练 →</button>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <dialog class="work-dialog" id="ingestDialog" aria-labelledby="ingestTitle">
+    <div class="dialog-frame">
+      <header class="dialog-header">
+        <div>
+          <p class="eyebrow">THREE INGEST PATHS</p>
+          <h2 id="ingestTitle">接入故障数据</h2>
+        </div>
+        <button class="icon-button" data-close-dialog type="button" aria-label="关闭">×</button>
+      </header>
+      <div class="dialog-tabs" role="tablist" aria-label="接入方式">
+        <button class="dialog-tab is-active" role="tab" data-tab="log" type="button">日志</button>
+        <button class="dialog-tab" role="tab" data-tab="onsite" type="button">现场上报</button>
+        <button class="dialog-tab" role="tab" data-tab="alert" type="button">告警接口</button>
+      </div>
+
+      <form class="ingest-form tab-panel is-active" id="logForm" data-panel="log">
+        <div class="form-grid compact-fields">
+          <label>机房编码<input name="site" value="BJYZ" required></label>
+          <label>完整 SN<input name="sn" placeholder="禁止只填尾号"></label>
+          <label>机架位<input name="rack_position" placeholder="如 BJYZD2SC-A-08-10"></label>
+          <label>设备名<input name="device_name" placeholder="主机名或交换机名"></label>
+        </div>
+        <label class="wide-field">异常摘要<input name="summary" placeholder="一句话说明当前现象" required></label>
+        <label class="file-drop" for="logFile">
+          <input id="logFile" type="file" accept=".log,.txt,.out,.json">
+          <span>读取本地日志文件</span>
+          <small>文件只提交到本机服务，最大 2MB</small>
+        </label>
+        <label class="wide-field">日志内容<textarea name="log_text" id="logText" rows="9" placeholder="粘贴 journalctl、dmesg、BMC、交换机或应用日志" required></textarea></label>
+        <details class="safety-details">
+          <summary>现场与操作信息（可选）</summary>
+          <div class="form-grid compact-fields">
+            <label>UID 状态<select name="uid_status"><option value="unknown">未知</option><option value="on">已点亮</option><option value="off">未点亮</option></select></label>
+            <label>是否从重装中发起<select name="from_reinstall"><option value="unknown">未知</option><option value="yes">是</option><option value="no">否</option></select></label>
+            <label>电源操作权限<select name="power_permission"><option value="unknown">未知</option><option value="allowed">允许</option><option value="confirm">需确认</option><option value="forbidden">禁止</option></select></label>
+            <label>接口团队<input name="interface_team" placeholder="SIM / 网络组"></label>
+          </div>
+          <label class="check-line"><input name="cc_required" type="checkbox"> 已按现有SOP确认需要提醒现场拨打CC</label>
+        </details>
+        <footer class="form-actions"><button class="primary-button" type="submit">分析这份日志</button></footer>
+      </form>
+
+      <form class="ingest-form tab-panel" id="onsiteForm" data-panel="onsite">
+        <div class="form-note">现场发现的问题可以先进入系统；设备身份或权限缺失时，处置卡会明确要求停止操作并联系接口人。</div>
+        <div class="form-grid compact-fields">
+          <label>机房编码<input name="site" value="BJYZ" required></label>
+          <label>完整 SN<input name="sn" placeholder="请输入机器完整SN"></label>
+          <label>机架位<input name="rack_position" placeholder="机柜与U位"></label>
+          <label>设备名<input name="device_name"></label>
+          <label>设备类型<select name="device_type"><option value="server">服务器</option><option value="switch">交换机</option><option value="facility">动环/设施</option><option value="unknown">未知</option></select></label>
+          <label>严重度<select name="severity"><option value="warning">警告</option><option value="critical">严重</option><option value="unknown">未知</option></select></label>
+        </div>
+        <label class="wide-field">现场观察<textarea name="observation" rows="6" placeholder="写明看到、听到、测到的现象，不需要先猜根因" required></textarea></label>
+        <div class="form-grid compact-fields">
+          <label>UID 状态<select name="uid_status"><option value="unknown">未知</option><option value="on">已点亮</option><option value="off">未点亮</option></select></label>
+          <label>是否从重装中发起<select name="from_reinstall"><option value="unknown">未知</option><option value="yes">是</option><option value="no">否</option></select></label>
+          <label>电源操作权限<select name="power_permission"><option value="unknown">未知</option><option value="allowed">允许</option><option value="confirm">需确认</option><option value="forbidden">禁止</option></select></label>
+          <label>接口人/团队<input name="interface_team" placeholder="如 SIM 张三 / 网络组"></label>
+        </div>
+        <label class="check-line"><input name="cc_required" type="checkbox"> 已按现有SOP确认需要提醒现场拨打CC</label>
+        <footer class="form-actions"><button class="primary-button" type="submit">提交现场异常</button></footer>
+      </form>
+
+      <form class="ingest-form tab-panel" id="alertForm" data-panel="alert">
+        <div class="form-note">监控平台向 <code>POST /api/ingest/alert</code> 推送 JSON。这里可直接模拟一次推送。</div>
+        <label class="wide-field">告警 JSON<textarea name="payload" rows="15" spellcheck="false">{
+  "site": "BJYZ",
+  "severity": "critical",
+  "sn": "SERVER-SN-20260823-001",
+  "device_name": "bjyz-compute-001",
+  "rack_position": "BJYZD2MC-A-01-01",
+  "device_type": "server",
+  "summary": "服务器网络链路中断",
+  "message": "interface eth0 link down",
+  "uid_status": "on",
+  "power_permission": "forbidden"
+}</textarea></label>
+        <footer class="form-actions"><button class="primary-button" type="submit">模拟告警推送</button></footer>
+      </form>
+    </div>
+  </dialog>
+
+  <dialog class="work-dialog demo-dialog" id="demoDialog" aria-labelledby="demoTitle">
+    <div class="dialog-frame">
+      <header class="dialog-header">
+        <div><p class="eyebrow">REPLAY LAB</p><h2 id="demoTitle">故障回放演练</h2></div>
+        <button class="icon-button" data-close-dialog type="button" aria-label="关闭">×</button>
+      </header>
+      <p class="dialog-intro">每个场景会通过真实入口进入分析链路，并保存到事件中心。</p>
+      <div class="demo-grid" id="demoGrid"></div>
+    </div>
+  </dialog>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  <script src="/app.js" defer></script>
+</body>
+</html>
+
