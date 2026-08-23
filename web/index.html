@@ -20,12 +20,16 @@
           <span>事件</span>
         </button>
         <button class="rail-button" data-action="open-ingest" type="button">
-          <span class="rail-icon" aria-hidden="true">接</span>
-          <span>接入</span>
+          <span class="rail-icon" aria-hidden="true">查</span>
+          <span>真实故障</span>
         </button>
         <button class="rail-button" data-action="open-demos" type="button">
-          <span class="rail-icon" aria-hidden="true">演</span>
-          <span>演练</span>
+          <span class="rail-icon" aria-hidden="true">例</span>
+          <span>模拟案例</span>
+        </button>
+        <button class="rail-button" data-action="open-sources" type="button">
+          <span class="rail-icon" aria-hidden="true">源</span>
+          <span>数据来源</span>
         </button>
       </nav>
       <div class="system-pulse" id="systemPulse" title="本地服务状态">
@@ -74,8 +78,9 @@
           <p class="workspace-title" id="workspaceTitle">等待事件进入</p>
         </div>
         <div class="workspace-actions">
-          <button class="secondary-button" data-action="open-ingest" type="button">接入数据</button>
-          <button class="primary-button" data-action="open-demos" type="button">运行演练</button>
+          <button class="secondary-button" data-action="open-sources" type="button">数据从哪来</button>
+          <button class="primary-button" data-action="open-ingest" type="button">分析真实故障</button>
+          <button class="secondary-button" data-action="open-demos" type="button">查看模拟案例</button>
         </div>
       </header>
       <section id="incidentDetail" class="detail-stage" aria-live="polite">
@@ -84,11 +89,11 @@
             <span></span><span></span><span></span><span></span><span></span>
           </div>
           <p class="eyebrow">NO ACTIVE SELECTION</p>
-          <h2>让第一条证据进入调查台</h2>
-          <p>接收监控告警、粘贴日志，或由现场上报设备异常。系统会把三种来源整理成同一个事件。</p>
+          <h2>先告诉系统，你现在手里有什么</h2>
+          <p>有日志就上传日志；人在现场就填写看到的异常；已有监控平台也可以自动把真实告警送进来。</p>
           <div class="empty-actions">
-            <button class="primary-button" data-action="open-ingest" type="button">接入第一条数据</button>
-            <button class="text-button" data-action="open-demos" type="button">先看内置演练 →</button>
+            <button class="primary-button" data-action="open-ingest" type="button">分析真实故障</button>
+            <button class="text-button" data-action="open-demos" type="button">先看模拟案例 →</button>
           </div>
         </div>
       </section>
@@ -99,15 +104,15 @@
     <div class="dialog-frame">
       <header class="dialog-header">
         <div>
-          <p class="eyebrow">THREE INGEST PATHS</p>
-          <h2 id="ingestTitle">接入故障数据</h2>
+          <p class="eyebrow">REAL INCIDENT</p>
+          <h2 id="ingestTitle">你现在手里有什么？</h2>
         </div>
         <button class="icon-button" data-close-dialog type="button" aria-label="关闭">×</button>
       </header>
-      <div class="dialog-tabs" role="tablist" aria-label="接入方式">
-        <button class="dialog-tab is-active" role="tab" data-tab="log" type="button">日志</button>
-        <button class="dialog-tab" role="tab" data-tab="onsite" type="button">现场上报</button>
-        <button class="dialog-tab" role="tab" data-tab="alert" type="button">告警接口</button>
+      <p class="dialog-intro">这里只处理真实故障。想体验产品，请退出后选择“查看模拟案例”。</p>
+      <div class="dialog-tabs" role="tablist" aria-label="你拥有的信息">
+        <button class="dialog-tab is-active" role="tab" data-tab="log" type="button">我有一份日志</button>
+        <button class="dialog-tab" role="tab" data-tab="onsite" type="button">我在现场发现了异常</button>
       </div>
 
       <form class="ingest-form tab-panel is-active" id="logForm" data-panel="log">
@@ -158,9 +163,30 @@
         <footer class="form-actions"><button class="primary-button" type="submit">提交现场异常</button></footer>
       </form>
 
-      <form class="ingest-form tab-panel" id="alertForm" data-panel="alert">
-        <div class="form-note">监控平台向 <code>POST /api/ingest/alert</code> 推送 JSON。这里可直接模拟一次推送。</div>
-        <label class="wide-field">告警 JSON<textarea name="payload" rows="15" spellcheck="false">{
+    </div>
+  </dialog>
+
+  <dialog class="work-dialog source-dialog" id="sourceDialog" aria-labelledby="sourceTitle">
+    <div class="dialog-frame">
+      <header class="dialog-header">
+        <div>
+          <p class="eyebrow">DATA SOURCES</p>
+          <h2 id="sourceTitle">真实数据从哪里来</h2>
+        </div>
+        <button class="icon-button" data-close-dialog type="button" aria-label="关闭">×</button>
+      </header>
+      <p class="dialog-intro">这里显示系统目前真正能读到什么。服务可连接不代表已经有客户数据，具体事件仍会展示本次到底查到了什么。</p>
+      <div class="source-toolbar">
+        <span>绿色表示可用，橙色表示等待配置，红色表示本次检查失败。</span>
+        <button class="secondary-button" data-action="check-sources" type="button">重新检查连接</button>
+      </div>
+      <div class="source-grid" id="sourceGrid" aria-live="polite"></div>
+      <details class="admin-config">
+        <summary>监控管理员配置和接口测试</summary>
+        <div class="admin-config-body">
+          <p>普通现场人员不需要填写下面内容。已有监控平台可将告警发送到 <code>POST /api/ingest/alert</code>；SigNoz Alertmanager 格式可发送到 <code>POST /api/ingest/signoz-alert</code>。</p>
+          <form class="ingest-form" id="alertForm">
+            <label class="wide-field">测试告警 JSON<textarea name="payload" rows="12" spellcheck="false">{
   "site": "BJYZ",
   "severity": "critical",
   "sn": "SERVER-SN-20260823-001",
@@ -172,18 +198,20 @@
   "uid_status": "on",
   "power_permission": "forbidden"
 }</textarea></label>
-        <footer class="form-actions"><button class="primary-button" type="submit">模拟告警推送</button></footer>
-      </form>
+            <footer class="form-actions"><button class="secondary-button" type="submit">发送一条接口测试数据</button></footer>
+          </form>
+        </div>
+      </details>
     </div>
   </dialog>
 
   <dialog class="work-dialog demo-dialog" id="demoDialog" aria-labelledby="demoTitle">
     <div class="dialog-frame">
       <header class="dialog-header">
-        <div><p class="eyebrow">REPLAY LAB</p><h2 id="demoTitle">故障回放演练</h2></div>
+        <div><p class="eyebrow">SIMULATED CASES</p><h2 id="demoTitle">模拟故障案例</h2></div>
         <button class="icon-button" data-close-dialog type="button" aria-label="关闭">×</button>
       </header>
-      <p class="dialog-intro">每个场景会通过真实入口进入分析链路，并保存到事件中心。</p>
+      <p class="dialog-intro">这里全部是系统生成的测试数据，用来体验分析流程，不代表任何真实设备状态。</p>
       <div class="demo-grid" id="demoGrid"></div>
     </div>
   </dialog>
@@ -192,4 +220,3 @@
   <script src="/app.js" defer></script>
 </body>
 </html>
-

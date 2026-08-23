@@ -107,6 +107,47 @@ class ServerIntegrationTests(unittest.TestCase):
             "ONSITE-ENDPOINT-SN-001",
         )
 
+    def test_sources_signoz_webhook_and_bounded_investigation_endpoints(self):
+        status, sources = self.request_json("/api/sources")
+        self.assertEqual(status, 200)
+        source_states = {item["id"]: item["state"] for item in sources["items"]}
+        self.assertEqual(source_states["manual_log"], "available")
+        self.assertEqual(source_states["signoz"], "not_configured")
+
+        status, created = self.request_json(
+            "/api/ingest/signoz-alert",
+            {
+                "alerts": [
+                    {
+                        "status": "firing",
+                        "labels": {
+                            "alertname": "LinkDown",
+                            "site": "BJYZ",
+                            "serial_number": "SIGNOZ-ENDPOINT-SN-001",
+                            "rack_position": "RACK-S-01",
+                            "device_type": "switch",
+                        },
+                        "annotations": {
+                            "summary": "交换机链路中断",
+                            "description": "interface HundredGigE7/0/36 link down",
+                        },
+                    }
+                ]
+            },
+        )
+        self.assertEqual(status, 201)
+        incident = created["incidents"][0]
+        self.assertEqual(incident["category"], "network")
+
+        status, investigated = self.request_json(
+            f"/api/incidents/{incident['id']}/investigate", {}
+        )
+        self.assertEqual(status, 200)
+        self.assertEqual(
+            investigated["investigation"]["external_checks"][0]["state"],
+            "not_configured",
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -2,6 +2,7 @@ const state = {
   incidents: [],
   selectedId: null,
   selected: null,
+  sources: [],
   filter: "all",
   query: "",
 };
@@ -26,6 +27,7 @@ const detailEl = document.querySelector("#incidentDetail");
 const toastEl = document.querySelector("#toast");
 const ingestDialog = document.querySelector("#ingestDialog");
 const demoDialog = document.querySelector("#demoDialog");
+const sourceDialog = document.querySelector("#sourceDialog");
 
 function escapeHtml(value) {
   return String(value ?? "")
@@ -113,7 +115,7 @@ function renderCounts(counts = {}) {
 function renderList() {
   const items = filteredIncidents();
   if (!items.length) {
-    listEl.innerHTML = `<div class="list-empty">当前筛选下没有事件。<br>可以接入数据或运行一次演练。</div>`;
+    listEl.innerHTML = `<div class="list-empty">当前筛选下没有事件。<br>可以分析真实故障或查看模拟案例。</div>`;
     return;
   }
   listEl.innerHTML = items.map((incident) => {
@@ -163,6 +165,45 @@ function modeLabel(value) {
     tool_assisted: "工具验证",
     legacy_untraced: "旧版事件",
   }[value] || value || "未知模式";
+}
+
+function connectionLabel(value) {
+  return {
+    available: "可使用",
+    connected: "已连接",
+    configured: "等待检查",
+    not_configured: "尚未连接",
+    failed: "连接失败",
+    planned: "等待客户接口",
+    completed: "已完成",
+    skipped: "未执行",
+  }[value] || value || "状态未知";
+}
+
+function renderSources(items = []) {
+  const target = document.querySelector("#sourceGrid");
+  if (!items.length) {
+    target.innerHTML = `<div class="analysis-warning">还没有读取到数据来源状态。</div>`;
+    return;
+  }
+  target.innerHTML = items.map((item) => `
+    <article class="source-card" data-state="${escapeHtml(item.state)}">
+      <header>
+        <span class="source-light" aria-hidden="true"></span>
+        <div><h3>${escapeHtml(item.name)}</h3><small>${escapeHtml(item.automatic ? "系统自动" : "人工提供")}</small></div>
+        <strong>${escapeHtml(connectionLabel(item.state))}</strong>
+      </header>
+      <p>${escapeHtml(item.role)}</p>
+      <div class="source-message">${escapeHtml(item.message)}</div>
+      <footer><span>${item.read_only ? "只读" : "可能写入"}</span><time>${escapeHtml(formatTime(item.checked_at))}</time></footer>
+    </article>`).join("");
+}
+
+async function loadSources(checkExternal = false) {
+  const payload = await api(`/api/sources?check=${checkExternal ? "1" : "0"}`);
+  state.sources = payload.items || [];
+  renderSources(state.sources);
+  return state.sources;
 }
 
 function listLines(items = [], empty = "暂无") {
@@ -281,8 +322,54 @@ function traceContent(stage, investigation) {
   if (stage === "correlated") return correlationPanel(investigation.correlation);
   if (stage === "hypothesized") return hypothesisList(investigation.hypotheses);
   if (stage === "model_enriched") return `<div class="model-observation"><p>${escapeHtml(investigation.model_observation?.impact_summary || "模型没有新增影响摘要")}</p>${listLines(investigation.model_observation?.limitations || [])}</div>`;
+  if (stage === "external_telemetry") return externalChecksPanel(investigation.external_checks, "signoz");
+  if (stage === "holmes_investigation") return externalChecksPanel(investigation.external_checks, "holmes");
   if (stage === "planned") return verificationPlan(investigation.verification_plan);
   return `<p class="muted-empty">该步骤没有详细输出。</p>`;
+}
+
+function externalChecksPanel(checks = [], provider) {
+  const item = (checks || []).find((check) => check.provider === provider);
+  if (!item) return `<p class="muted-empty">本事件还没有执行这一步。</p>`;
+  const records = item.records || [];
+  const metrics = item.metrics || [];
+  const calls = item.tool_calls || [];
+  return `<div class="external-check" data-state="${escapeHtml(item.state)}">
+    <header><strong>${escapeHtml(provider === "signoz" ? "SigNoz 监控查询" : "HolmesGPT AI 调查")}</strong><span>${escapeHtml(connectionLabel(item.state))}</span></header>
+    <p>${escapeHtml(item.message || "没有状态说明")}</p>
+    ${item.analysis ? `<div class="tool-analysis"><small>AI 返回内容（仍需证据校验）</small><p>${escapeHtml(item.analysis)}</p></div>` : ""}
+    ${records.length ? `<details><summary>查看查询到的 ${records.length} 条日志</summary><ol class="tool-records">${records.map((record) => `<li><code>${escapeHtml(record.text || "空记录")}</code></li>`).join("")}</ol></details>` : ""}
+    ${metrics.length ? `<details><summary>查看 ${metrics.length} 组主机指标结果</summary><ol class="tool-records">${metrics.map((record) => `<li><code>${escapeHtml(record.text || "空记录")}</code></li>`).join("")}</ol></details>` : ""}
+    <div class="tool-calls"><small>只读工具记录</small>${calls.length ? calls.map((call) => `<div><code>${escapeHtml(call.tool || "只读工具")}</code><span>${escapeHtml(call.description || "已执行只读查询")}</span></div>`).join("") : `<p>没有工具调用记录。</p>`}</div>
+  </div>`;
+}
+
+function dataPath(investigation = {}, incident = {}) {
+  const checks = investigation.external_checks || [];
+  const signoz = checks.find((item) => item.provider === "signoz");
+  const holmes = checks.find((item) => item.provider === "holmes");
+  const sourceText = investigation.simulation
+    ? "模拟案例进入系统"
+    : investigation.intake?.[0]?.source_label || "收到真实故障信息";
+  const stateFor = (item) => {
+    if (!item) return "idle";
+    if (item.state === "completed") return "done";
+    if (item.state === "failed") return "failed";
+    return "waiting";
+  };
+  return `<section class="signal-route" aria-label="本事件的数据路径">
+    <div class="signal-route-head">
+      <div><p class="eyebrow">DATA ROUTE</p><h3>这次数据从哪来，又经过了什么</h3></div>
+      ${investigation.simulation ? `<span class="simulation-badge">模拟数据不会查询真实设备</span>` : `<button class="secondary-button compact-button" data-action="run-investigation" type="button">查询监控并让 AI 补充调查</button>`}
+    </div>
+    <ol class="signal-bus">
+      <li data-state="done"><span>01</span><div><strong>收到故障</strong><small>${escapeHtml(sourceText)}</small></div></li>
+      <li data-state="${escapeHtml(stateFor(signoz))}"><span>02</span><div><strong>查询真实监控</strong><small>${escapeHtml(signoz?.message || "尚未查询 SigNoz")}</small></div></li>
+      <li data-state="done"><span>03</span><div><strong>规则与经验判断</strong><small>提取事实、召回知识卡、保留竞争候选</small></div></li>
+      <li data-state="${escapeHtml(stateFor(holmes))}"><span>04</span><div><strong>AI 工具调查</strong><small>${escapeHtml(holmes?.message || "尚未调用 HolmesGPT")}</small></div></li>
+      <li data-state="${incident.status === "resolved" ? "done" : "waiting"}"><span>05</span><div><strong>人工确认与处置</strong><small>${incident.status === "resolved" ? "事件已标记解决" : "等待验证结果或现场操作"}</small></div></li>
+    </ol>
+  </section>`;
 }
 
 function traceLine(investigation) {
@@ -362,6 +449,8 @@ function renderDetail(incident) {
 
       ${identityStrip(device)}
       ${moreDevices.length ? `<p class="multi-device-note">事件中还有 ${moreDevices.length} 台设备：${moreDevices.map((item) => escapeHtml(item.sn || item.name || item.rack_position)).join("、")}。这不代表系统已经证明它们具有相同根因，请查看下方“事件关联”。</p>` : ""}
+
+      ${dataPath(investigation, incident)}
 
       <aside class="capability-banner" data-mode="${escapeHtml(investigation.mode)}">
         <div class="capability-mode"><span>当前分析模式</span><strong>${escapeHtml(modeLabel(investigation.mode))}</strong></div>
@@ -458,6 +547,27 @@ async function updateStatus(status) {
   }
 }
 
+async function runInvestigation(button) {
+  if (!state.selectedId) return;
+  const original = button.textContent;
+  button.disabled = true;
+  button.textContent = "正在查询真实监控…";
+  try {
+    const incident = await api(`/api/incidents/${encodeURIComponent(state.selectedId)}/investigate`, {
+      method: "POST",
+      body: "{}",
+    });
+    state.selected = incident;
+    showToast("本次只读调查已记录，未连接的来源也已如实标出");
+    await loadIncidents(incident.id);
+  } catch (error) {
+    showToast(error.message, true);
+  } finally {
+    button.disabled = false;
+    button.textContent = original;
+  }
+}
+
 function openDialog(dialog) {
   if (typeof dialog.showModal === "function") dialog.showModal();
   else dialog.setAttribute("open", "");
@@ -493,8 +603,9 @@ async function submitForm(form, source) {
       method: "POST",
       body: JSON.stringify(payload),
     });
-    closeDialog(ingestDialog);
-    showToast(`已进入事件 ${incident.id}`);
+    if (source === "alert") closeDialog(sourceDialog);
+    else closeDialog(ingestDialog);
+    showToast(`真实故障信息已保存到事件 ${incident.id}`);
     await loadIncidents(incident.id);
   } catch (error) {
     showToast(error.message, true);
@@ -530,7 +641,7 @@ async function runDemo(demoId, button) {
     });
     closeDialog(demoDialog);
     const incident = result.incidents?.[0];
-    showToast("演练数据已完成分析并进入事件中心");
+    showToast("模拟案例已完成分析，并明确标记为模拟数据");
     await loadIncidents(incident?.id);
   } catch (error) {
     showToast(error.message, true);
@@ -547,6 +658,21 @@ document.addEventListener("click", (event) => {
   const action = event.target.closest("[data-action]")?.dataset.action;
   if (action === "open-ingest") openDialog(ingestDialog);
   if (action === "open-demos") openDialog(demoDialog);
+  if (action === "open-sources") {
+    openDialog(sourceDialog);
+    loadSources(false).catch((error) => showToast(error.message, true));
+  }
+  if (action === "check-sources") {
+    const button = event.target.closest("[data-action]");
+    const original = button.textContent;
+    button.disabled = true;
+    button.textContent = "正在检查…";
+    loadSources(true)
+      .then(() => showToast("连接状态已重新检查"))
+      .catch((error) => showToast(error.message, true))
+      .finally(() => { button.disabled = false; button.textContent = original; });
+  }
+  if (action === "run-investigation") runInvestigation(event.target.closest("[data-action]"));
   if (action === "copy-summary") {
     const text = state.selected?.communication_text || "";
     navigator.clipboard.writeText(text).then(() => showToast("沟通摘要已复制"));
@@ -608,11 +734,12 @@ document.querySelector("#alertForm").addEventListener("submit", (event) => {
   submitForm(event.currentTarget, "alert");
 });
 
-for (const dialog of [ingestDialog, demoDialog]) {
+for (const dialog of [ingestDialog, demoDialog, sourceDialog]) {
   dialog.addEventListener("click", (event) => {
     if (event.target === dialog) closeDialog(dialog);
   });
 }
 
 loadDemos();
+loadSources(false).catch(() => {});
 loadIncidents();

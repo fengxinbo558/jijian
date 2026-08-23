@@ -2,6 +2,7 @@
 """Real-browser product flow used by the final verification pass."""
 
 import os
+import time
 from pathlib import Path
 
 from playwright.sync_api import sync_playwright
@@ -15,6 +16,7 @@ BASE_URL = os.getenv("IDCAI_BASE_URL", "http://127.0.0.1:8765")
 
 def main() -> None:
     console_errors = []
+    browser_sn = f"BROWSER-FULL-SN-{time.time_ns()}"
     with sync_playwright() as playwright:
         browser = playwright.chromium.launch(headless=True)
         page = browser.new_page(viewport={"width": 1500, "height": 980})
@@ -22,32 +24,42 @@ def main() -> None:
         page.goto(BASE_URL, wait_until="networkidle")
         page.get_by_role("heading", name="故障队列").wait_for()
 
-        page.get_by_role("button", name="运行演练").first.click()
+        page.get_by_role("button", name="查看模拟案例").first.click()
         page.get_by_role("button", name="运行这个场景").first.click()
         page.locator(".incident-row").first.wait_for()
         page.locator(".cc-alert").wait_for()
         assert "请立即按现有 CC 流程拨打电话" in page.locator(".cc-alert").inner_text()
         assert "G3M02179543" in page.locator(".identity-strip").inner_text()
         assert "规则＋知识" in page.locator(".capability-banner").inner_text()
-        assert "模拟数据" in page.locator(".simulation-badge").inner_text()
+        assert "模拟数据" in page.locator(".capability-banner .simulation-badge").inner_text()
+        assert "模拟数据不会查询真实设备" in page.locator(".signal-route").inner_text()
         assert page.locator(".evidence-node").count() >= 7
         assert "外部输入提供了相同 incident_key" in page.locator(".correlation-panel").text_content()
         assert "%" not in page.locator(".hypothesis-list").inner_text()
         page.wait_for_timeout(3200)
         page.screenshot(path=str(REPORTS / "browser-desktop.png"), full_page=True)
 
-        page.get_by_role("button", name="接入数据").first.click()
-        page.locator("#logForm input[name='sn']").fill("BROWSER-FULL-SN-20260823")
+        page.get_by_role("button", name="数据从哪来").first.click()
+        page.locator("#sourceGrid .source-card").first.wait_for()
+        assert "SigNoz 监控底座" in page.locator("#sourceGrid").inner_text()
+        assert "尚未连接" in page.locator("#sourceGrid").inner_text()
+        page.screenshot(path=str(REPORTS / "browser-sources.png"), full_page=False)
+        page.locator("#sourceDialog [data-close-dialog]").click()
+
+        page.get_by_role("button", name="分析真实故障").first.click()
+        page.locator("#logForm input[name='sn']").fill(browser_sn)
         page.locator("#logForm input[name='rack_position']").fill("BJYZD9-C-23-01")
         page.locator("#logForm input[name='device_name']").fill("bjyz-browser-check")
         page.locator("#logForm input[name='summary']").fill("浏览器测试磁盘错误")
         page.locator("#logText").fill("kernel: blk_update_request: I/O error, dev sdd")
         page.get_by_role("button", name="分析这份日志").click()
-        page.get_by_text("BROWSER-FULL-SN-20260823", exact=True).first.wait_for()
-        assert "BROWSER-FULL-SN-20260823" in page.locator(".identity-strip").inner_text()
+        page.get_by_text(browser_sn, exact=True).first.wait_for()
+        assert browser_sn in page.locator(".identity-strip").inner_text()
         assert "用户粘贴或上传日志" in page.locator(".intake-list").first.inner_text()
         assert "STORAGE-IO-001" in page.locator(".investigation-section").text_content()
         assert "尚未通过真实工具或人工检查确认" in page.locator(".conclusion-board").inner_text()
+        page.get_by_role("button", name="查询监控并让 AI 补充调查").click()
+        page.get_by_text("SigNoz 尚未连接，未执行自动日志查询", exact=False).first.wait_for()
         page.get_by_role("button", name="开始处理").click()
         page.get_by_text("处理中", exact=True).last.wait_for()
 
@@ -61,7 +73,7 @@ def main() -> None:
 
     if console_errors:
         raise AssertionError("Browser console errors: " + " | ".join(console_errors))
-    print("Browser flow passed: capability disclosure, trace, correlation, knowledge, CC boundary, ingestion, full SN, status, mobile")
+    print("Browser flow passed: plain-language entry, source state, data route, trace, CC boundary, real incident, full SN, status, mobile")
 
 
 if __name__ == "__main__":

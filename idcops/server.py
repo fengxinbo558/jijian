@@ -11,7 +11,7 @@ from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
-from urllib.parse import unquote, urlparse
+from urllib.parse import parse_qs, unquote, urlparse
 
 from .demo_cases import DEMO_CASES, list_demos
 from .service import IncidentService
@@ -63,8 +63,10 @@ class RequestHandler(BaseHTTPRequestHandler):
 
     def do_GET(self) -> None:  # noqa: N802
         try:
-            path = urlparse(self.path).path
+            parsed_url = urlparse(self.path)
+            path = parsed_url.path
             if path == "/api/health":
+                source_statuses = self.app.service.source_statuses(check_external=False)
                 self._json(
                     HTTPStatus.OK,
                     {
@@ -72,9 +74,20 @@ class RequestHandler(BaseHTTPRequestHandler):
                         "service": "IDC AI 故障调查台",
                         "ai_enabled": self.app.service.ai.enabled,
                         "analysis_mode": "ai_enriched" if self.app.service.ai.enabled else "rules_only",
-                        "collectors_connected": [],
+                        "collectors_connected": [
+                            item["id"]
+                            for item in source_statuses
+                            if item.get("state") == "connected"
+                        ],
                         "knowledge": self.app.service.knowledge.summary(),
                     },
+                )
+            elif path == "/api/sources":
+                query = parse_qs(parsed_url.query)
+                check_external = query.get("check", ["0"])[0] in {"1", "true", "yes"}
+                self._json(
+                    HTTPStatus.OK,
+                    {"items": self.app.service.source_statuses(check_external=check_external)},
                 )
             elif path == "/api/incidents":
                 incidents = self.app.service.list_incidents()
@@ -107,6 +120,9 @@ class RequestHandler(BaseHTTPRequestHandler):
             if path == "/api/ingest/alert":
                 incident = self.app.service.ingest("monitor", payload)
                 self._json(HTTPStatus.CREATED, incident)
+            elif path == "/api/ingest/signoz-alert":
+                incidents = self.app.service.ingest_signoz_alert(payload)
+                self._json(HTTPStatus.CREATED, {"incidents": incidents})
             elif path == "/api/ingest/log":
                 incident = self.app.service.ingest("log", payload)
                 self._json(HTTPStatus.CREATED, incident)
@@ -119,6 +135,19 @@ class RequestHandler(BaseHTTPRequestHandler):
                 if incident is None:
                     raise APIError(HTTPStatus.NOT_FOUND, "事件不存在")
                 self._json(HTTPStatus.OK, incident)
+            elif path.startswith("/api/incidents/") and path.endswith("/investigate"):
+                incident_id = unquote(
+                    path.removeprefix("/api/incidents/").removesuffix("/investigate")
+                )
+                incident = self.app.service.investigate_external(incident_id)
+                if incident is None:
+                    raise APIError(HTTPStatus.NOT_FOUND, "事件不存在")
+                self._json(HTTPStatus.OK, incident)
+            elif path == "/api/sources/check":
+                self._json(
+                    HTTPStatus.OK,
+                    {"items": self.app.service.source_statuses(check_external=True)},
+                )
             elif path.startswith("/api/demos/") and path.endswith("/run"):
                 demo_id = unquote(path.removeprefix("/api/demos/").removesuffix("/run"))
                 case = DEMO_CASES.get(demo_id)

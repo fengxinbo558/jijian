@@ -304,6 +304,31 @@ class IncidentStore:
             )
         return self.get_incident(incident_id)
 
+    def update_investigation(
+        self,
+        incident_id: str,
+        investigation: Mapping[str, Any],
+        audit_details: Optional[Mapping[str, Any]] = None,
+    ) -> Optional[Dict[str, Any]]:
+        now = utc_now()
+        with self.connect() as connection:
+            exists = connection.execute(
+                "SELECT 1 FROM incidents WHERE id = ?", (incident_id,)
+            ).fetchone()
+            if exists is None:
+                return None
+            connection.execute(
+                "UPDATE incidents SET investigation_json = ?, updated_at = ? WHERE id = ?",
+                (_dump(investigation), now, incident_id),
+            )
+            self._audit(
+                connection,
+                incident_id,
+                "external_investigation_completed",
+                dict(audit_details or {}),
+            )
+        return self.get_incident(incident_id)
+
     def _insert_input(
         self, connection: sqlite3.Connection, incident_id: str, event: NormalizedInput
     ) -> None:

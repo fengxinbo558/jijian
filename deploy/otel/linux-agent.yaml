@@ -1,0 +1,84 @@
+# OpenTelemetry Collector Contrib example for one physical or virtual Linux host.
+# Required environment values are documented in docs/integrations/signoz-holmes-setup.md.
+
+extensions:
+  health_check:
+    endpoint: 127.0.0.1:13133
+
+receivers:
+  journald:
+    directory: /var/log/journal
+    priority: info
+    operators:
+      - type: move
+        from: attributes.message
+        to: body
+
+  hostmetrics:
+    collection_interval: 30s
+    scrapers:
+      cpu:
+      disk:
+      filesystem:
+        exclude_mount_points:
+          mount_points:
+            - /dev/*
+            - /proc/*
+            - /sys/*
+            - /run/k3s/containerd/*
+            - /var/lib/docker/*
+            - /var/lib/containers/storage/*
+          match_type: regexp
+      load:
+      memory:
+      network:
+      paging:
+
+processors:
+  memory_limiter:
+    check_interval: 5s
+    limit_mib: 256
+    spike_limit_mib: 64
+
+  resource/idc_identity:
+    attributes:
+      - key: site.code
+        value: ${env:IDC_SITE_CODE}
+        action: upsert
+      - key: host.serial_number
+        value: ${env:IDC_DEVICE_SN}
+        action: upsert
+      - key: rack.position
+        value: ${env:IDC_RACK_POSITION}
+        action: upsert
+
+  resourcedetection/system:
+    detectors: [system]
+    system:
+      hostname_sources: [os]
+    override: false
+
+  batch:
+    timeout: 5s
+    send_batch_size: 1024
+
+exporters:
+  otlp/signoz:
+    endpoint: ${env:SIGNOZ_OTLP_ENDPOINT}
+    tls:
+      insecure: ${env:SIGNOZ_OTLP_INSECURE}
+
+service:
+  extensions: [health_check]
+  telemetry:
+    logs:
+      level: info
+  pipelines:
+    logs:
+      receivers: [journald]
+      processors: [memory_limiter, resourcedetection/system, resource/idc_identity, batch]
+      exporters: [otlp/signoz]
+    metrics:
+      receivers: [hostmetrics]
+      processors: [memory_limiter, resourcedetection/system, resource/idc_identity, batch]
+      exporters: [otlp/signoz]

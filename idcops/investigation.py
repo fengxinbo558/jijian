@@ -108,6 +108,10 @@ def _line_for(text: str, match: re.Match[str]) -> str:
 def _source_declaration(event: NormalizedInput) -> Tuple[str, str, bool]:
     if event.labels.get("demo_id") or event.labels.get("is_demo"):
         return "内置测试场景", "simulation", True
+    if event.labels.get("source_system") == "signoz" and event.labels.get("external_query"):
+        return "SigNoz 自动查询", "external_tool", False
+    if event.labels.get("source_system") == "signoz":
+        return "SigNoz 告警 Webhook", "external_system", False
     if event.source == "monitor":
         return "监控 Webhook 提供", "external_system", False
     if event.source == "onsite":

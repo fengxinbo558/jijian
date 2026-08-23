@@ -9,6 +9,7 @@ from typing import Any, Dict, Iterable, List, Mapping, Optional
 
 from .ai import AIEnricher
 from .investigation import apply_model_enrichment, build_investigation, merge_investigations
+from .integrations import IntegrationHub
 from .knowledge import KnowledgeBase
 from .models import NormalizedInput, RuleAnalysis, utc_now
 from .rules import analyze_rules
@@ -71,6 +72,10 @@ def normalize_input(source: str, payload: Mapping[str, Any]) -> NormalizedInput:
         labels["demo_id"] = payload["demo_id"]
     if "is_demo" in payload:
         labels["is_demo"] = payload["is_demo"]
+    if "source_system" in payload:
+        labels["source_system"] = payload["source_system"]
+    if "external_query" in payload:
+        labels["external_query"] = payload["external_query"]
 
     if source == "monitor":
         summary = _coalesce(payload.get("summary"), payload.get("title"), payload.get("message"))
@@ -105,10 +110,12 @@ class IncidentService:
         store: IncidentStore,
         ai: Optional[AIEnricher] = None,
         knowledge: Optional[KnowledgeBase] = None,
+        integrations: Optional[IntegrationHub] = None,
     ) -> None:
         self.store = store
         self.ai = ai or AIEnricher()
         self.knowledge = knowledge or KnowledgeBase()
+        self.integrations = integrations or IntegrationHub()
 
     def ingest(self, source: str, payload: Mapping[str, Any]) -> Dict[str, Any]:
         event = normalize_input(source, payload)
@@ -359,3 +366,154 @@ class IncidentService:
 
     def update_status(self, incident_id: str, status: str) -> Optional[Dict[str, Any]]:
         return self.store.update_status(incident_id, status)
+
+    def source_statuses(self, check_external: bool = True) -> List[Dict[str, Any]]:
+        return self.integrations.source_statuses(check_external=check_external)
+
+    def ingest_signoz_alert(self, payload: Mapping[str, Any]) -> List[Dict[str, Any]]:
+        """Accept Alertmanager-style SigNoz webhooks without requiring one exact template."""
+
+        raw_alerts = payload.get("alerts")
+        alerts = list(raw_alerts) if isinstance(raw_alerts, list) else [payload]
+        results: List[Dict[str, Any]] = []
+        for raw in alerts[:100]:
+            if not isinstance(raw, Mapping):
+                continue
+            labels = raw.get("labels") if isinstance(raw.get("labels"), Mapping) else {}
+            annotations = (
+                raw.get("annotations") if isinstance(raw.get("annotations"), Mapping) else {}
+            )
+            summary = _coalesce(
+                annotations.get("summary"),
+                annotations.get("title"),
+                labels.get("alertname"),
+                raw.get("title"),
+                "SigNoz 监控发现异常",
+            )
+            details = _coalesce(
+                annotations.get("description"),
+                annotations.get("message"),
+                raw.get("message"),
+                summary,
+            )
+            status = str(raw.get("status") or payload.get("status") or "").lower()
+            severity = str(labels.get("severity") or raw.get("severity") or "unknown").lower()
+            if status == "firing" and severity == "unknown":
+                severity = "warning"
+            normalized = {
+                "site": _coalesce(labels.get("site"), labels.get("site_code"), raw.get("site")),
+                "severity": severity,
+                "sn": _coalesce(
+                    labels.get("serial_number"), labels.get("sn"), raw.get("sn")
+                ),
+                "device_name": _coalesce(
+                    labels.get("host_name"),
+                    labels.get("hostname"),
+                    labels.get("host.name"),
+                    raw.get("device_name"),
+                ),
+                "rack_position": _coalesce(
+                    labels.get("rack_position"), labels.get("rack"), raw.get("rack_position")
+                ),
+                "ip": _coalesce(labels.get("instance"), labels.get("ip"), raw.get("ip")),
+                "device_type": _coalesce(
+                    labels.get("device_type"), raw.get("device_type"), "unknown"
+                ),
+                "summary": summary,
+                "message": details,
+                "event_time": _coalesce(raw.get("startsAt"), raw.get("event_time")),
+                "incident_key": _coalesce(
+                    raw.get("fingerprint"), payload.get("groupKey"), raw.get("incident_key")
+                ),
+                "source_system": "signoz",
+                "labels": {**dict(labels), "signoz_status": status},
+            }
+            results.append(self.ingest("monitor", normalized))
+        if not results:
+            raise ValueError("SigNoz 告警中没有可处理的 alerts")
+        return results
+
+    def investigate_external(self, incident_id: str) -> Optional[Dict[str, Any]]:
+        incident = self.get_incident(incident_id)
+        if incident is None:
+            return None
+        observations = self.integrations.investigate(incident)
+        investigation = copy.deepcopy(incident.get("investigation", {}))
+        signoz = observations[0]
+        if signoz.get("state") == "completed" and signoz.get("records"):
+            device = (incident.get("devices") or [{}])[0]
+            text = "\n".join(
+                str(item.get("text", ""))
+                for item in signoz.get("records", [])
+                if isinstance(item, Mapping) and item.get("text")
+            )
+            if text:
+                event = normalize_input(
+                    "log",
+                    {
+                        "site": incident.get("site"),
+                        "severity": incident.get("severity"),
+                        "device": device,
+                        "summary": "SigNoz 自动查询返回的事故时间窗日志",
+                        "raw_text": text,
+                        "event_time": incident.get("updated_at"),
+                        "source_system": "signoz",
+                        "external_query": True,
+                    },
+                )
+                analysis = analyze_rules(event)
+                child = build_investigation(
+                    event,
+                    analysis,
+                    str(incident.get("correlation_key", "")),
+                    self.knowledge,
+                    model_enriched=False,
+                )
+                investigation = merge_investigations(investigation, child)
+
+        investigation["external_checks"] = observations
+        trace = list(investigation.get("trace", []))
+        trace = [
+            item
+            for item in trace
+            if item.get("stage") not in {"external_telemetry", "holmes_investigation"}
+        ]
+        trace.extend(
+            [
+                {
+                    "stage": "external_telemetry",
+                    "title": "查询真实监控数据",
+                    "summary": signoz.get("message", "没有执行 SigNoz 查询"),
+                    "state": "confirmed"
+                    if signoz.get("state") == "completed"
+                    else "waiting",
+                    "limitation": "服务可连接不等于数据完整；查询只覆盖当前设备身份和事故时间窗。",
+                },
+                {
+                    "stage": "holmes_investigation",
+                    "title": "AI 调用只读工具补充调查",
+                    "summary": observations[1].get("message", "没有执行 AI 工具调查"),
+                    "state": "inferred"
+                    if observations[1].get("state") == "completed"
+                    else "waiting",
+                    "limitation": "AI 回答不能覆盖设备身份、操作许可或未经工具验证的事实。",
+                },
+            ]
+        )
+        investigation["trace"] = trace
+        investigation["mode"] = (
+            "tool_assisted"
+            if any(item.get("state") == "completed" for item in observations)
+            else investigation.get("mode", "rules_only")
+        )
+        investigation["capability_notice"] = "；".join(
+            str(item.get("message", "")) for item in observations if item.get("message")
+        )
+        return self.store.update_investigation(
+            incident_id,
+            investigation,
+            {
+                "providers": [item.get("provider") for item in observations],
+                "states": [item.get("state") for item in observations],
+            },
+        )
