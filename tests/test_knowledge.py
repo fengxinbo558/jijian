@@ -28,6 +28,8 @@ class KnowledgeBaseTests(unittest.TestCase):
         self.assertIn("STORAGE-IO-001", identifiers)
         self.assertIn("STORAGE-SMART-002", identifiers)
         self.assertNotIn("STORAGE-CAPACITY-005", identifiers)
+        self.assertNotIn("MEMORY-CE-009", identifiers)
+        self.assertNotIn("NETWORK-TOR-022", identifiers)
         self.assertTrue(all(item["reasons"] for item in results))
 
 

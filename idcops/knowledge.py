@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Set
 
@@ -38,6 +39,21 @@ def _strings(value: Any) -> List[str]:
     if not isinstance(value, list):
         return []
     return [str(item).strip() for item in value if str(item).strip()]
+
+
+def _term_matches(term: str, text: str) -> bool:
+    """Match short ASCII identifiers as words, not arbitrary substrings."""
+
+    normalized = term.strip()
+    if re.fullmatch(r"[A-Za-z0-9_]+", normalized):
+        return bool(
+            re.search(
+                rf"(?<![A-Za-z0-9_]){re.escape(normalized)}(?![A-Za-z0-9_])",
+                text,
+                flags=re.IGNORECASE,
+            )
+        )
+    return normalized.lower() in text.lower()
 
 
 class KnowledgeBase:
@@ -158,7 +174,7 @@ class KnowledgeBase:
             matched_rules = sorted(rule_set & self._terms(match.get("rule_names", [])))
             matched_facts = sorted(fact_set & self._terms(match.get("fact_types", [])))
             matched_terms = [
-                term for term in _strings(match.get("terms")) if term.lower() in lowered
+                term for term in _strings(match.get("terms")) if _term_matches(term, lowered)
             ]
             applies = self._terms(card.get("applies_to", []))
             device_match = bool(device and device in applies)
