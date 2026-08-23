@@ -1,0 +1,2442 @@
+{
+  "started_at": "2026-08-23T18:08:15+00:00",
+  "finished_at": "2026-08-23T18:08:15+00:00",
+  "summary": {
+    "cases_passed": 36,
+    "cases_total": 36,
+    "checks_passed": 259,
+    "checks_total": 259,
+    "evaluation_mode": "generated_logs_rules_and_knowledge_baseline",
+    "model_status": "not_required_for_baseline"
+  },
+  "domains": {
+    "application": {
+      "passed": 5,
+      "total": 5
+    },
+    "facility_fire": {
+      "passed": 1,
+      "total": 1
+    },
+    "facility_power": {
+      "passed": 4,
+      "total": 4
+    },
+    "facility_temperature": {
+      "passed": 1,
+      "total": 1
+    },
+    "facility_water": {
+      "passed": 2,
+      "total": 2
+    },
+    "linux_hardware": {
+      "passed": 1,
+      "total": 1
+    },
+    "linux_kernel": {
+      "passed": 1,
+      "total": 1
+    },
+    "linux_ras": {
+      "passed": 2,
+      "total": 2
+    },
+    "linux_service": {
+      "passed": 1,
+      "total": 1
+    },
+    "linux_storage": {
+      "passed": 3,
+      "total": 3
+    },
+    "linux_system": {
+      "passed": 1,
+      "total": 1
+    },
+    "linux_time": {
+      "passed": 1,
+      "total": 1
+    },
+    "network_common_incident": {
+      "passed": 1,
+      "total": 1
+    },
+    "network_errors": {
+      "passed": 1,
+      "total": 1
+    },
+    "network_hardware": {
+      "passed": 1,
+      "total": 1
+    },
+    "network_interface": {
+      "passed": 2,
+      "total": 2
+    },
+    "network_layer2": {
+      "passed": 2,
+      "total": 2
+    },
+    "network_optics": {
+      "passed": 1,
+      "total": 1
+    },
+    "network_redundancy": {
+      "passed": 3,
+      "total": 3
+    },
+    "network_routing": {
+      "passed": 2,
+      "total": 2
+    }
+  },
+  "limitations": [
+    "所有日志均为合成数据，不能代替真实厂商设备和客户环境验证。",
+    "本评测验证规则、知识召回、CC边界和审计结构，不代表生产定位准确率。",
+    "真实接入仍需要客户授权的journald、syslog、NMS、BMC、动环和资产接口。"
+  ],
+  "results": [
+    {
+      "id": "LNX-001",
+      "domain": "linux_system",
+      "title": "OOM终止Java进程",
+      "origin": "journald/kernel",
+      "passed": true,
+      "checks": [
+        {
+          "name": "故障分类",
+          "actual": "system",
+          "expected": "system",
+          "passed": true
+        },
+        {
+          "name": "需要现场介入",
+          "actual": false,
+          "expected": false,
+          "passed": true
+        },
+        {
+          "name": "重大事件判断",
+          "actual": "not_required",
+          "expected": "not_required",
+          "passed": true
+        },
+        {
+          "name": "事实类型",
+          "actual": [
+            "oom_kill"
+          ],
+          "expected": [
+            "oom_kill"
+          ],
+          "passed": true
+        },
+        {
+          "name": "命中规则",
+          "actual": [
+            "system_memory_pressure"
+          ],
+          "expected": [
+            "system_memory_pressure"
+          ],
+          "passed": true
+        },
+        {
+          "name": "候选原因",
+          "actual": true,
+          "expected": true,
+          "passed": true
+        },
+        {
+          "name": "模拟数据标识",
+          "actual": true,
+          "expected": true,
+          "passed": true
+        }
+      ],
+      "incident_ids": [
+        "INC-20260823-C17CCC"
+      ]
+    },
+    {
+      "id": "LNX-002",
+      "domain": "linux_storage",
+      "title": "磁盘I/O错误导致文件系统只读",
+      "origin": "journald/kernel",
+      "passed": true,
+      "checks": [
+        {
+          "name": "故障分类",
+          "actual": "hardware",
+          "expected": "hardware",
+          "passed": true
+        },
+        {
+          "name": "需要现场介入",
+          "actual": true,
+          "expected": true,
+          "passed": true
+        },
+        {
+          "name": "重大事件判断",
+          "actual": "not_required",
+          "expected": "not_required",
+          "passed": true
+        },
+        {
+          "name": "事实类型",
+          "actual": [
+            "block_device",
+            "block_io_error",
+            "filesystem_read_only"
+          ],
+          "expected": [
+            "block_io_error",
+            "filesystem_read_only"
+          ],
+          "passed": true
+        },
+        {
+          "name": "命中规则",
+          "actual": [
+            "disk_io"
+          ],
+          "expected": [
+            "disk_io"
+          ],
+          "passed": true
+        },
+        {
+          "name": "候选原因",
+          "actual": true,
+          "expected": true,
+          "passed": true
+        },
+        {
+          "name": "模拟数据标识",
+          "actual": true,
+          "expected": true,
+          "passed": true
+        }
+      ],
+      "incident_ids": [
+        "INC-20260823-79DDD7"
+      ]
+    },
+    {
+      "id": "LNX-003",
+      "domain": "linux_storage",
+      "title": "inode耗尽而非磁盘介质故障",
+      "origin": "application_file",
+      "passed": true,
+      "checks": [
+        {
+          "name": "故障分类",
+          "actual": "hardware",
+          "expected": "hardware",
+          "passed": true
+        },
+        {
+          "name": "需要现场介入",
+          "actual": true,
+          "expected": true,
+          "passed": true
+        },
+        {
+          "name": "重大事件判断",
+          "actual": "not_required",
+          "expected": "not_required",
+          "passed": true
+        },
+        {
+          "name": "事实类型",
+          "actual": [
+            "inode_exhausted",
+            "space_exhausted"
+          ],
+          "expected": [
+            "space_exhausted",
+            "inode_exhausted"
+          ],
+          "passed": true
+        },
+        {
+          "name": "命中规则",
+          "actual": [
+            "disk_io"
+          ],
+          "expected": [
+            "disk_io"
+          ],
+          "passed": true
+        },
+        {
+          "name": "建议内容",
+          "actual": true,
+          "expected": true,
+          "passed": true
+        },
+        {
+          "name": "模拟数据标识",
+          "actual": true,
+          "expected": true,
+          "passed": true
+        }
+      ],
+      "incident_ids": [
+        "INC-20260823-52ACFA"
+      ]
+    },
+    {
+      "id": "LNX-004",
+      "domain": "linux_storage",
+      "title": "NVMe介质与健康告警",
+      "origin": "smart_nvme_file",
+      "passed": true,
+      "checks": [
+        {
+          "name": "故障分类",
+          "actual": "hardware",
+          "expected": "hardware",
+          "passed": true
+        },
+        {
+          "name": "需要现场介入",
+          "actual": true,
+          "expected": true,
+          "passed": true
+        },
+        {
+          "name": "重大事件判断",
+          "actual": "not_required",
+          "expected": "not_required",
+          "passed": true
+        },
+        {
+          "name": "事实类型",
+          "actual": [
+            "block_device",
+            "nvme_health",
+            "smart_failure"
+          ],
+          "expected": [
+            "nvme_health"
+          ],
+          "passed": true
+        },
+        {
+          "name": "命中规则",
+          "actual": [
+            "disk_io"
+          ],
+          "expected": [
+            "disk_io"
+          ],
+          "passed": true
+        },
+        {
+          "name": "候选原因",
+          "actual": true,
+          "expected": true,
+          "passed": true
+        },
+        {
+          "name": "模拟数据标识",
+          "actual": true,
+          "expected": true,
+          "passed": true
+        }
+      ],
+      "incident_ids": [
+        "INC-20260823-EB4012"
+      ]
+    },
+    {
+      "id": "LNX-005",
+      "domain": "linux_ras",
+      "title": "ECC可纠正错误不直接确认坏条",
+      "origin": "journald/edac",
+      "passed": true,
+      "checks": [
+        {
+          "name": "故障分类",
+          "actual": "hardware",
+          "expected": "hardware",
+          "passed": true
+        },
+        {
+          "name": "需要现场介入",
+          "actual": true,
+          "expected": true,
+          "passed": true
+        },
+        {
+          "name": "重大事件判断",
+          "actual": "not_required",
+          "expected": "not_required",
+          "passed": true
+        },
+        {
+          "name": "事实类型",
+          "actual": [
+            "memory_ce",
+            "memory_locator"
+          ],
+          "expected": [
+            "memory_ce",
+            "memory_locator"
+          ],
+          "passed": true
+        },
+        {
+          "name": "命中规则",
+          "actual": [
+            "memory_machine_check"
+          ],
+          "expected": [
+            "memory_machine_check"
+          ],
+          "passed": true
+        },
+        {
+          "name": "不得越级确认",
+          "actual": true,
+          "expected": true,
+          "passed": true
+        },
+        {
+          "name": "模拟数据标识",
+          "actual": true,
+          "expected": true,
+          "passed": true
+        }
+      ],
+      "incident_ids": [
+        "INC-20260823-E3D871"
+      ]
+    },
+    {
+      "id": "LNX-006",
+      "domain": "linux_ras",
+      "title": "ECC不可纠正错误伴随MCE",
+      "origin": "journald/edac",
+      "passed": true,
+      "checks": [
+        {
+          "name": "故障分类",
+          "actual": "hardware",
+          "expected": "hardware",
+          "passed": true
+        },
+        {
+          "name": "需要现场介入",
+          "actual": true,
+          "expected": true,
+          "passed": true
+        },
+        {
+          "name": "重大事件判断",
+          "actual": "not_required",
+          "expected": "not_required",
+          "passed": true
+        },
+        {
+          "name": "事实类型",
+          "actual": [
+            "machine_check",
+            "memory_ce",
+            "memory_locator",
+            "memory_ue"
+          ],
+          "expected": [
+            "memory_ue",
+            "machine_check",
+            "memory_locator"
+          ],
+          "passed": true
+        },
+        {
+          "name": "命中规则",
+          "actual": [
+            "memory_machine_check"
+          ],
+          "expected": [
+            "memory_machine_check"
+          ],
+          "passed": true
+        },
+        {
+          "name": "候选原因",
+          "actual": true,
+          "expected": true,
+          "passed": true
+        },
+        {
+          "name": "模拟数据标识",
+          "actual": true,
+          "expected": true,
+          "passed": true
+        }
+      ],
+      "incident_ids": [
+        "INC-20260823-8AF6FB"
+      ]
+    },
+    {
+      "id": "LNX-007",
+      "domain": "linux_hardware",
+      "title": "PCIe AER与网卡重置",
+      "origin": "journald/kernel",
+      "passed": true,
+      "checks": [
+        {
+          "name": "故障分类",
+          "actual": "hardware",
+          "expected": "hardware",
+          "passed": true
+        },
+        {
+          "name": "需要现场介入",
+          "actual": true,
+          "expected": true,
+          "passed": true
+        },
+        {
+          "name": "重大事件判断",
+          "actual": "not_required",
+          "expected": "not_required",
+          "passed": true
+        },
+        {
+          "name": "事实类型",
+          "actual": [
+            "network_interface",
+            "nic_reset",
+            "pcie_aer"
+          ],
+          "expected": [
+            "pcie_aer",
+            "nic_reset"
+          ],
+          "passed": true
+        },
+        {
+          "name": "命中规则",
+          "actual": [
+            "hardware_bus",
+            "network_link"
+          ],
+          "expected": [
+            "hardware_bus"
+          ],
+          "passed": true
+        },
+        {
+          "name": "不得越级确认",
+          "actual": true,
+          "expected": true,
+          "passed": true
+        },
+        {
+          "name": "模拟数据标识",
+          "actual": true,
+          "expected": true,
+          "passed": true
+        }
+      ],
+      "incident_ids": [
+        "INC-20260823-49E448"
+      ]
+    },
+    {
+      "id": "LNX-008",
+      "domain": "linux_kernel",
+      "title": "内核软锁死与watchdog",
+      "origin": "journald/kernel",
+      "passed": true,
+      "checks": [
+        {
+          "name": "故障分类",
+          "actual": "system",
+          "expected": "system",
+          "passed": true
+        },
+        {
+          "name": "需要现场介入",
+          "actual": false,
+          "expected": false,
+          "passed": true
+        },
+        {
+          "name": "重大事件判断",
+          "actual": "not_required",
+          "expected": "not_required",
+          "passed": true
+        },
+        {
+          "name": "事实类型",
+          "actual": [
+            "kernel_watchdog"
+          ],
+          "expected": [
+            "kernel_watchdog"
+          ],
+          "passed": true
+        },
+        {
+          "name": "命中规则",
+          "actual": [
+            "system_stability"
+          ],
+          "expected": [
+            "system_stability"
+          ],
+          "passed": true
+        },
+        {
+          "name": "不得越级确认",
+          "actual": true,
+          "expected": true,
+          "passed": true
+        },
+        {
+          "name": "模拟数据标识",
+          "actual": true,
+          "expected": true,
+          "passed": true
+        }
+      ],
+      "incident_ids": [
+        "INC-20260823-19AACA"
+      ]
+    },
+    {
+      "id": "LNX-009",
+      "domain": "linux_service",
+      "title": "systemd服务重启循环",
+      "origin": "journald/systemd",
+      "passed": true,
+      "checks": [
+        {
+          "name": "故障分类",
+          "actual": "application",
+          "expected": "application",
+          "passed": true
+        },
+        {
+          "name": "需要现场介入",
+          "actual": false,
+          "expected": false,
+          "passed": true
+        },
+        {
+          "name": "重大事件判断",
+          "actual": "not_required",
+          "expected": "not_required",
+          "passed": true
+        },
+        {
+          "name": "事实类型",
+          "actual": [
+            "restart_loop",
+            "service_failed"
+          ],
+          "expected": [
+            "service_failed",
+            "restart_loop"
+          ],
+          "passed": true
+        },
+        {
+          "name": "命中规则",
+          "actual": [
+            "application_runtime"
+          ],
+          "expected": [
+            "application_runtime"
+          ],
+          "passed": true
+        },
+        {
+          "name": "候选原因",
+          "actual": true,
+          "expected": true,
+          "passed": true
+        },
+        {
+          "name": "模拟数据标识",
+          "actual": true,
+          "expected": true,
+          "passed": true
+        }
+      ],
+      "incident_ids": [
+        "INC-20260823-91F3BB"
+      ]
+    },
+    {
+      "id": "LNX-010",
+      "domain": "linux_time",
+      "title": "时钟同步失败影响日志排序",
+      "origin": "journald/chrony",
+      "passed": true,
+      "checks": [
+        {
+          "name": "故障分类",
+          "actual": "system",
+          "expected": "system",
+          "passed": true
+        },
+        {
+          "name": "需要现场介入",
+          "actual": false,
+          "expected": false,
+          "passed": true
+        },
+        {
+          "name": "重大事件判断",
+          "actual": "not_required",
+          "expected": "not_required",
+          "passed": true
+        },
+        {
+          "name": "事实类型",
+          "actual": [
+            "time_sync_failure"
+          ],
+          "expected": [
+            "time_sync_failure"
+          ],
+          "passed": true
+        },
+        {
+          "name": "命中规则",
+          "actual": [
+            "system_time"
+          ],
+          "expected": [
+            "system_time"
+          ],
+          "passed": true
+        },
+        {
+          "name": "建议内容",
+          "actual": true,
+          "expected": true,
+          "passed": true
+        },
+        {
+          "name": "模拟数据标识",
+          "actual": true,
+          "expected": true,
+          "passed": true
+        }
+      ],
+      "incident_ids": [
+        "INC-20260823-414E0A"
+      ]
+    },
+    {
+      "id": "APP-001",
+      "domain": "application",
+      "title": "监听端口冲突",
+      "origin": "application_file",
+      "passed": true,
+      "checks": [
+        {
+          "name": "故障分类",
+          "actual": "application",
+          "expected": "application",
+          "passed": true
+        },
+        {
+          "name": "需要现场介入",
+          "actual": false,
+          "expected": false,
+          "passed": true
+        },
+        {
+          "name": "重大事件判断",
+          "actual": "not_required",
+          "expected": "not_required",
+          "passed": true
+        },
+        {
+          "name": "事实类型",
+          "actual": [
+            "port_conflict",
+            "service_failed"
+          ],
+          "expected": [
+            "port_conflict",
+            "service_failed"
+          ],
+          "passed": true
+        },
+        {
+          "name": "命中规则",
+          "actual": [
+            "application_runtime"
+          ],
+          "expected": [
+            "application_runtime"
+          ],
+          "passed": true
+        },
+        {
+          "name": "候选原因",
+          "actual": true,
+          "expected": true,
+          "passed": true
+        },
+        {
+          "name": "模拟数据标识",
+          "actual": true,
+          "expected": true,
+          "passed": true
+        }
+      ],
+      "incident_ids": [
+        "INC-20260823-F3637B"
+      ]
+    },
+    {
+      "id": "APP-002",
+      "domain": "application",
+      "title": "依赖服务连接被拒绝",
+      "origin": "application_file",
+      "passed": true,
+      "checks": [
+        {
+          "name": "故障分类",
+          "actual": "application",
+          "expected": "application",
+          "passed": true
+        },
+        {
+          "name": "需要现场介入",
+          "actual": false,
+          "expected": false,
+          "passed": true
+        },
+        {
+          "name": "重大事件判断",
+          "actual": "not_required",
+          "expected": "not_required",
+          "passed": true
+        },
+        {
+          "name": "事实类型",
+          "actual": [
+            "dependency_connection"
+          ],
+          "expected": [
+            "dependency_connection"
+          ],
+          "passed": true
+        },
+        {
+          "name": "命中规则",
+          "actual": [
+            "application_dependency"
+          ],
+          "expected": [
+            "application_dependency"
+          ],
+          "passed": true
+        },
+        {
+          "name": "候选原因",
+          "actual": true,
+          "expected": true,
+          "passed": true
+        },
+        {
+          "name": "模拟数据标识",
+          "actual": true,
+          "expected": true,
+          "passed": true
+        }
+      ],
+      "incident_ids": [
+        "INC-20260823-FDAEF6"
+      ]
+    },
+    {
+      "id": "APP-003",
+      "domain": "application",
+      "title": "DNS解析失败",
+      "origin": "application_file",
+      "passed": true,
+      "checks": [
+        {
+          "name": "故障分类",
+          "actual": "application",
+          "expected": "application",
+          "passed": true
+        },
+        {
+          "name": "需要现场介入",
+          "actual": false,
+          "expected": false,
+          "passed": true
+        },
+        {
+          "name": "重大事件判断",
+          "actual": "not_required",
+          "expected": "not_required",
+          "passed": true
+        },
+        {
+          "name": "事实类型",
+          "actual": [
+            "dns_failure"
+          ],
+          "expected": [
+            "dns_failure"
+          ],
+          "passed": true
+        },
+        {
+          "name": "命中规则",
+          "actual": [
+            "application_dependency"
+          ],
+          "expected": [
+            "application_dependency"
+          ],
+          "passed": true
+        },
+        {
+          "name": "候选原因",
+          "actual": true,
+          "expected": true,
+          "passed": true
+        },
+        {
+          "name": "模拟数据标识",
+          "actual": true,
+          "expected": true,
+          "passed": true
+        }
+      ],
+      "incident_ids": [
+        "INC-20260823-85B0E6"
+      ]
+    },
+    {
+      "id": "APP-004",
+      "domain": "application",
+      "title": "TLS证书已过期",
+      "origin": "reverse_proxy_file",
+      "passed": true,
+      "checks": [
+        {
+          "name": "故障分类",
+          "actual": "application",
+          "expected": "application",
+          "passed": true
+        },
+        {
+          "name": "需要现场介入",
+          "actual": false,
+          "expected": false,
+          "passed": true
+        },
+        {
+          "name": "重大事件判断",
+          "actual": "not_required",
+          "expected": "not_required",
+          "passed": true
+        },
+        {
+          "name": "事实类型",
+          "actual": [
+            "tls_certificate_expired"
+          ],
+          "expected": [
+            "tls_certificate_expired"
+          ],
+          "passed": true
+        },
+        {
+          "name": "命中规则",
+          "actual": [
+            "application_dependency"
+          ],
+          "expected": [
+            "application_dependency"
+          ],
+          "passed": true
+        },
+        {
+          "name": "候选原因",
+          "actual": true,
+          "expected": true,
+          "passed": true
+        },
+        {
+          "name": "模拟数据标识",
+          "actual": true,
+          "expected": true,
+          "passed": true
+        }
+      ],
+      "incident_ids": [
+        "INC-20260823-370F3F"
+      ]
+    },
+    {
+      "id": "APP-005",
+      "domain": "application",
+      "title": "数据库死锁",
+      "origin": "database_file",
+      "passed": true,
+      "checks": [
+        {
+          "name": "故障分类",
+          "actual": "application",
+          "expected": "application",
+          "passed": true
+        },
+        {
+          "name": "需要现场介入",
+          "actual": false,
+          "expected": false,
+          "passed": true
+        },
+        {
+          "name": "重大事件判断",
+          "actual": "not_required",
+          "expected": "not_required",
+          "passed": true
+        },
+        {
+          "name": "事实类型",
+          "actual": [
+            "lock_contention"
+          ],
+          "expected": [
+            "lock_contention"
+          ],
+          "passed": true
+        },
+        {
+          "name": "命中规则",
+          "actual": [
+            "application_runtime"
+          ],
+          "expected": [
+            "application_runtime"
+          ],
+          "passed": true
+        },
+        {
+          "name": "候选原因",
+          "actual": true,
+          "expected": true,
+          "passed": true
+        },
+        {
+          "name": "模拟数据标识",
+          "actual": true,
+          "expected": true,
+          "passed": true
+        }
+      ],
+      "incident_ids": [
+        "INC-20260823-636FC9"
+      ]
+    },
+    {
+      "id": "NET-001",
+      "domain": "network_interface",
+      "title": "交换机端口运行状态下降",
+      "origin": "network_syslog",
+      "passed": true,
+      "checks": [
+        {
+          "name": "故障分类",
+          "actual": "network",
+          "expected": "network",
+          "passed": true
+        },
+        {
+          "name": "需要现场介入",
+          "actual": true,
+          "expected": true,
+          "passed": true
+        },
+        {
+          "name": "重大事件判断",
+          "actual": "not_required",
+          "expected": "not_required",
+          "passed": true
+        },
+        {
+          "name": "事实类型",
+          "actual": [
+            "link_down",
+            "network_interface"
+          ],
+          "expected": [
+            "link_down",
+            "network_interface"
+          ],
+          "passed": true
+        },
+        {
+          "name": "命中规则",
+          "actual": [
+            "network_link"
+          ],
+          "expected": [
+            "network_link"
+          ],
+          "passed": true
+        },
+        {
+          "name": "候选原因",
+          "actual": true,
+          "expected": true,
+          "passed": true
+        },
+        {
+          "name": "模拟数据标识",
+          "actual": true,
+          "expected": true,
+          "passed": true
+        }
+      ],
+      "incident_ids": [
+        "INC-20260823-FE05BE"
+      ]
+    },
+    {
+      "id": "NET-002",
+      "domain": "network_interface",
+      "title": "端口短时间反复flap",
+      "origin": "network_syslog",
+      "passed": true,
+      "checks": [
+        {
+          "name": "故障分类",
+          "actual": "network",
+          "expected": "network",
+          "passed": true
+        },
+        {
+          "name": "需要现场介入",
+          "actual": true,
+          "expected": true,
+          "passed": true
+        },
+        {
+          "name": "重大事件判断",
+          "actual": "not_required",
+          "expected": "not_required",
+          "passed": true
+        },
+        {
+          "name": "事实类型",
+          "actual": [
+            "link_flap",
+            "network_interface"
+          ],
+          "expected": [
+            "link_flap",
+            "network_interface"
+          ],
+          "passed": true
+        },
+        {
+          "name": "命中规则",
+          "actual": [
+            "network_link"
+          ],
+          "expected": [
+            "network_link"
+          ],
+          "passed": true
+        },
+        {
+          "name": "候选原因",
+          "actual": true,
+          "expected": true,
+          "passed": true
+        },
+        {
+          "name": "模拟数据标识",
+          "actual": true,
+          "expected": true,
+          "passed": true
+        }
+      ],
+      "incident_ids": [
+        "INC-20260823-1CDB2D"
+      ]
+    },
+    {
+      "id": "NET-003",
+      "domain": "network_optics",
+      "title": "接收光功率低",
+      "origin": "network_syslog",
+      "passed": true,
+      "checks": [
+        {
+          "name": "故障分类",
+          "actual": "network",
+          "expected": "network",
+          "passed": true
+        },
+        {
+          "name": "需要现场介入",
+          "actual": true,
+          "expected": true,
+          "passed": true
+        },
+        {
+          "name": "重大事件判断",
+          "actual": "not_required",
+          "expected": "not_required",
+          "passed": true
+        },
+        {
+          "name": "事实类型",
+          "actual": [
+            "network_interface",
+            "optical_power"
+          ],
+          "expected": [
+            "optical_power",
+            "network_interface"
+          ],
+          "passed": true
+        },
+        {
+          "name": "命中规则",
+          "actual": [
+            "network_link"
+          ],
+          "expected": [
+            "network_link"
+          ],
+          "passed": true
+        },
+        {
+          "name": "候选原因",
+          "actual": true,
+          "expected": true,
+          "passed": true
+        },
+        {
+          "name": "不得越级确认",
+          "actual": true,
+          "expected": true,
+          "passed": true
+        },
+        {
+          "name": "模拟数据标识",
+          "actual": true,
+          "expected": true,
+          "passed": true
+        }
+      ],
+      "incident_ids": [
+        "INC-20260823-FBE09C"
+      ]
+    },
+    {
+      "id": "NET-004",
+      "domain": "network_errors",
+      "title": "接口CRC错误持续增长",
+      "origin": "network_syslog",
+      "passed": true,
+      "checks": [
+        {
+          "name": "故障分类",
+          "actual": "network",
+          "expected": "network",
+          "passed": true
+        },
+        {
+          "name": "需要现场介入",
+          "actual": true,
+          "expected": true,
+          "passed": true
+        },
+        {
+          "name": "重大事件判断",
+          "actual": "not_required",
+          "expected": "not_required",
+          "passed": true
+        },
+        {
+          "name": "事实类型",
+          "actual": [
+            "crc_error",
+            "network_interface"
+          ],
+          "expected": [
+            "crc_error",
+            "network_interface"
+          ],
+          "passed": true
+        },
+        {
+          "name": "命中规则",
+          "actual": [
+            "network_link"
+          ],
+          "expected": [
+            "network_link"
+          ],
+          "passed": true
+        },
+        {
+          "name": "不得越级确认",
+          "actual": true,
+          "expected": true,
+          "passed": true
+        },
+        {
+          "name": "模拟数据标识",
+          "actual": true,
+          "expected": true,
+          "passed": true
+        }
+      ],
+      "incident_ids": [
+        "INC-20260823-DE4B73"
+      ]
+    },
+    {
+      "id": "NET-005",
+      "domain": "network_redundancy",
+      "title": "LACP成员退出但聚合仍工作",
+      "origin": "network_syslog",
+      "passed": true,
+      "checks": [
+        {
+          "name": "故障分类",
+          "actual": "network",
+          "expected": "network",
+          "passed": true
+        },
+        {
+          "name": "需要现场介入",
+          "actual": true,
+          "expected": true,
+          "passed": true
+        },
+        {
+          "name": "重大事件判断",
+          "actual": "not_required",
+          "expected": "not_required",
+          "passed": true
+        },
+        {
+          "name": "事实类型",
+          "actual": [
+            "lacp_member_down",
+            "network_interface",
+            "redundancy_degraded"
+          ],
+          "expected": [
+            "lacp_member_down",
+            "redundancy_degraded"
+          ],
+          "passed": true
+        },
+        {
+          "name": "命中规则",
+          "actual": [
+            "network_redundancy"
+          ],
+          "expected": [
+            "network_redundancy"
+          ],
+          "passed": true
+        },
+        {
+          "name": "候选原因",
+          "actual": true,
+          "expected": true,
+          "passed": true
+        },
+        {
+          "name": "模拟数据标识",
+          "actual": true,
+          "expected": true,
+          "passed": true
+        }
+      ],
+      "incident_ids": [
+        "INC-20260823-F51068"
+      ]
+    },
+    {
+      "id": "NET-006",
+      "domain": "network_redundancy",
+      "title": "Linux Bond主备切换",
+      "origin": "journald/kernel",
+      "passed": true,
+      "checks": [
+        {
+          "name": "故障分类",
+          "actual": "network",
+          "expected": "network",
+          "passed": true
+        },
+        {
+          "name": "需要现场介入",
+          "actual": true,
+          "expected": true,
+          "passed": true
+        },
+        {
+          "name": "重大事件判断",
+          "actual": "not_required",
+          "expected": "not_required",
+          "passed": true
+        },
+        {
+          "name": "事实类型",
+          "actual": [
+            "bond_member_down",
+            "network_interface"
+          ],
+          "expected": [
+            "bond_member_down"
+          ],
+          "passed": true
+        },
+        {
+          "name": "命中规则",
+          "actual": [
+            "network_link",
+            "network_redundancy"
+          ],
+          "expected": [
+            "network_redundancy"
+          ],
+          "passed": true
+        },
+        {
+          "name": "候选原因",
+          "actual": true,
+          "expected": true,
+          "passed": true
+        },
+        {
+          "name": "模拟数据标识",
+          "actual": true,
+          "expected": true,
+          "passed": true
+        }
+      ],
+      "incident_ids": [
+        "INC-20260823-D098F0"
+      ]
+    },
+    {
+      "id": "NET-007",
+      "domain": "network_routing",
+      "title": "BGP邻居会话下降",
+      "origin": "network_syslog",
+      "passed": true,
+      "checks": [
+        {
+          "name": "故障分类",
+          "actual": "network",
+          "expected": "network",
+          "passed": true
+        },
+        {
+          "name": "需要现场介入",
+          "actual": false,
+          "expected": false,
+          "passed": true
+        },
+        {
+          "name": "重大事件判断",
+          "actual": "not_required",
+          "expected": "not_required",
+          "passed": true
+        },
+        {
+          "name": "事实类型",
+          "actual": [
+            "bgp_neighbor_down"
+          ],
+          "expected": [
+            "bgp_neighbor_down"
+          ],
+          "passed": true
+        },
+        {
+          "name": "命中规则",
+          "actual": [
+            "network_control_plane"
+          ],
+          "expected": [
+            "network_control_plane"
+          ],
+          "passed": true
+        },
+        {
+          "name": "候选原因",
+          "actual": true,
+          "expected": true,
+          "passed": true
+        },
+        {
+          "name": "模拟数据标识",
+          "actual": true,
+          "expected": true,
+          "passed": true
+        }
+      ],
+      "incident_ids": [
+        "INC-20260823-88796B"
+      ]
+    },
+    {
+      "id": "NET-008",
+      "domain": "network_routing",
+      "title": "OSPF邻接关系下降",
+      "origin": "network_syslog",
+      "passed": true,
+      "checks": [
+        {
+          "name": "故障分类",
+          "actual": "network",
+          "expected": "network",
+          "passed": true
+        },
+        {
+          "name": "需要现场介入",
+          "actual": false,
+          "expected": false,
+          "passed": true
+        },
+        {
+          "name": "重大事件判断",
+          "actual": "not_required",
+          "expected": "not_required",
+          "passed": true
+        },
+        {
+          "name": "事实类型",
+          "actual": [
+            "network_interface",
+            "ospf_neighbor_down"
+          ],
+          "expected": [
+            "ospf_neighbor_down"
+          ],
+          "passed": true
+        },
+        {
+          "name": "命中规则",
+          "actual": [
+            "network_control_plane"
+          ],
+          "expected": [
+            "network_control_plane"
+          ],
+          "passed": true
+        },
+        {
+          "name": "候选原因",
+          "actual": true,
+          "expected": true,
+          "passed": true
+        },
+        {
+          "name": "模拟数据标识",
+          "actual": true,
+          "expected": true,
+          "passed": true
+        }
+      ],
+      "incident_ids": [
+        "INC-20260823-8890AB"
+      ]
+    },
+    {
+      "id": "NET-009",
+      "domain": "network_layer2",
+      "title": "BPDU Guard阻断接入口",
+      "origin": "network_syslog",
+      "passed": true,
+      "checks": [
+        {
+          "name": "故障分类",
+          "actual": "network",
+          "expected": "network",
+          "passed": true
+        },
+        {
+          "name": "需要现场介入",
+          "actual": false,
+          "expected": false,
+          "passed": true
+        },
+        {
+          "name": "重大事件判断",
+          "actual": "not_required",
+          "expected": "not_required",
+          "passed": true
+        },
+        {
+          "name": "事实类型",
+          "actual": [
+            "network_interface",
+            "stp_protection"
+          ],
+          "expected": [
+            "stp_protection"
+          ],
+          "passed": true
+        },
+        {
+          "name": "命中规则",
+          "actual": [
+            "network_layer2"
+          ],
+          "expected": [
+            "network_layer2"
+          ],
+          "passed": true
+        },
+        {
+          "name": "候选原因",
+          "actual": true,
+          "expected": true,
+          "passed": true
+        },
+        {
+          "name": "模拟数据标识",
+          "actual": true,
+          "expected": true,
+          "passed": true
+        }
+      ],
+      "incident_ids": [
+        "INC-20260823-2017E5"
+      ]
+    },
+    {
+      "id": "NET-010",
+      "domain": "network_layer2",
+      "title": "MAC地址在两个端口间漂移",
+      "origin": "network_syslog",
+      "passed": true,
+      "checks": [
+        {
+          "name": "故障分类",
+          "actual": "network",
+          "expected": "network",
+          "passed": true
+        },
+        {
+          "name": "需要现场介入",
+          "actual": false,
+          "expected": false,
+          "passed": true
+        },
+        {
+          "name": "重大事件判断",
+          "actual": "not_required",
+          "expected": "not_required",
+          "passed": true
+        },
+        {
+          "name": "事实类型",
+          "actual": [
+            "link_flap",
+            "mac_flap",
+            "network_interface"
+          ],
+          "expected": [
+            "mac_flap"
+          ],
+          "passed": true
+        },
+        {
+          "name": "命中规则",
+          "actual": [
+            "network_layer2"
+          ],
+          "expected": [
+            "network_layer2"
+          ],
+          "passed": true
+        },
+        {
+          "name": "候选原因",
+          "actual": true,
+          "expected": true,
+          "passed": true
+        },
+        {
+          "name": "模拟数据标识",
+          "actual": true,
+          "expected": true,
+          "passed": true
+        }
+      ],
+      "incident_ids": [
+        "INC-20260823-AB3BB7"
+      ]
+    },
+    {
+      "id": "NET-011",
+      "domain": "network_redundancy",
+      "title": "MLAG对等链路丢失",
+      "origin": "network_syslog",
+      "passed": true,
+      "checks": [
+        {
+          "name": "故障分类",
+          "actual": "network",
+          "expected": "network",
+          "passed": true
+        },
+        {
+          "name": "需要现场介入",
+          "actual": false,
+          "expected": false,
+          "passed": true
+        },
+        {
+          "name": "重大事件判断",
+          "actual": "not_required",
+          "expected": "not_required",
+          "passed": true
+        },
+        {
+          "name": "事实类型",
+          "actual": [
+            "link_down",
+            "mlag_peer_down",
+            "redundancy_degraded"
+          ],
+          "expected": [
+            "mlag_peer_down",
+            "redundancy_degraded"
+          ],
+          "passed": true
+        },
+        {
+          "name": "命中规则",
+          "actual": [
+            "network_link",
+            "network_redundancy"
+          ],
+          "expected": [
+            "network_redundancy"
+          ],
+          "passed": true
+        },
+        {
+          "name": "候选原因",
+          "actual": true,
+          "expected": true,
+          "passed": true
+        },
+        {
+          "name": "模拟数据标识",
+          "actual": true,
+          "expected": true,
+          "passed": true
+        }
+      ],
+      "incident_ids": [
+        "INC-20260823-9ADCC4"
+      ]
+    },
+    {
+      "id": "NET-012",
+      "domain": "network_hardware",
+      "title": "交换机单电源模块故障",
+      "origin": "network_syslog",
+      "passed": true,
+      "checks": [
+        {
+          "name": "故障分类",
+          "actual": "facility",
+          "expected": "facility",
+          "passed": true
+        },
+        {
+          "name": "需要现场介入",
+          "actual": true,
+          "expected": true,
+          "passed": true
+        },
+        {
+          "name": "重大事件判断",
+          "actual": "not_required",
+          "expected": "not_required",
+          "passed": true
+        },
+        {
+          "name": "事实类型",
+          "actual": [
+            "power_supply",
+            "redundancy_degraded"
+          ],
+          "expected": [
+            "power_supply",
+            "redundancy_degraded"
+          ],
+          "passed": true
+        },
+        {
+          "name": "命中规则",
+          "actual": [
+            "facility_power"
+          ],
+          "expected": [
+            "facility_power"
+          ],
+          "passed": true
+        },
+        {
+          "name": "候选原因",
+          "actual": true,
+          "expected": true,
+          "passed": true
+        },
+        {
+          "name": "模拟数据标识",
+          "actual": true,
+          "expected": true,
+          "passed": true
+        }
+      ],
+      "incident_ids": [
+        "INC-20260823-A4A664"
+      ]
+    },
+    {
+      "id": "NET-013",
+      "domain": "network_common_incident",
+      "title": "核心交换机宕机导致多个下联不可达",
+      "origin": "nms_webhook_and_syslog",
+      "passed": true,
+      "checks": [
+        {
+          "name": "故障分类",
+          "actual": "network",
+          "expected": "network",
+          "passed": true
+        },
+        {
+          "name": "需要现场介入",
+          "actual": true,
+          "expected": true,
+          "passed": true
+        },
+        {
+          "name": "CC提醒",
+          "actual": true,
+          "expected": true,
+          "passed": true
+        },
+        {
+          "name": "重大事件判断",
+          "actual": "required",
+          "expected": "required",
+          "passed": true
+        },
+        {
+          "name": "事件数量",
+          "actual": 1,
+          "expected": 1,
+          "passed": true
+        },
+        {
+          "name": "输入数量",
+          "actual": 3,
+          "expected": 3,
+          "passed": true
+        },
+        {
+          "name": "影响对象数",
+          "actual": 3,
+          "expected": 3,
+          "passed": true
+        },
+        {
+          "name": "事实类型",
+          "actual": [
+            "core_device_failure",
+            "core_switch_outage",
+            "multi_device_network"
+          ],
+          "expected": [
+            "core_switch_outage",
+            "multi_device_network"
+          ],
+          "passed": true
+        },
+        {
+          "name": "命中规则",
+          "actual": [
+            "network_core_outage"
+          ],
+          "expected": [
+            "network_core_outage"
+          ],
+          "passed": true
+        },
+        {
+          "name": "模拟数据标识",
+          "actual": true,
+          "expected": true,
+          "passed": true
+        }
+      ],
+      "incident_ids": [
+        "INC-20260823-40DA40"
+      ]
+    },
+    {
+      "id": "FAC-001",
+      "domain": "facility_power",
+      "title": "核心机房单路掉电",
+      "origin": "dcim_webhook",
+      "passed": true,
+      "checks": [
+        {
+          "name": "故障分类",
+          "actual": "facility",
+          "expected": "facility",
+          "passed": true
+        },
+        {
+          "name": "需要现场介入",
+          "actual": true,
+          "expected": true,
+          "passed": true
+        },
+        {
+          "name": "CC提醒",
+          "actual": true,
+          "expected": true,
+          "passed": true
+        },
+        {
+          "name": "重大事件判断",
+          "actual": "required",
+          "expected": "required",
+          "passed": true
+        },
+        {
+          "name": "事实类型",
+          "actual": [
+            "redundancy_degraded",
+            "single_feed_loss"
+          ],
+          "expected": [
+            "single_feed_loss",
+            "redundancy_degraded"
+          ],
+          "passed": true
+        },
+        {
+          "name": "命中规则",
+          "actual": [
+            "facility_power"
+          ],
+          "expected": [
+            "facility_power"
+          ],
+          "passed": true
+        },
+        {
+          "name": "模拟数据标识",
+          "actual": true,
+          "expected": true,
+          "passed": true
+        }
+      ],
+      "incident_ids": [
+        "INC-20260823-E14791"
+      ]
+    },
+    {
+      "id": "FAC-002",
+      "domain": "facility_power",
+      "title": "核心机房双路掉电",
+      "origin": "dcim_webhook",
+      "passed": true,
+      "checks": [
+        {
+          "name": "故障分类",
+          "actual": "facility",
+          "expected": "facility",
+          "passed": true
+        },
+        {
+          "name": "需要现场介入",
+          "actual": true,
+          "expected": true,
+          "passed": true
+        },
+        {
+          "name": "CC提醒",
+          "actual": true,
+          "expected": true,
+          "passed": true
+        },
+        {
+          "name": "重大事件判断",
+          "actual": "required",
+          "expected": "required",
+          "passed": true
+        },
+        {
+          "name": "事实类型",
+          "actual": [
+            "dual_feed_loss",
+            "single_feed_loss"
+          ],
+          "expected": [
+            "dual_feed_loss"
+          ],
+          "passed": true
+        },
+        {
+          "name": "命中规则",
+          "actual": [
+            "facility_power"
+          ],
+          "expected": [
+            "facility_power"
+          ],
+          "passed": true
+        },
+        {
+          "name": "模拟数据标识",
+          "actual": true,
+          "expected": true,
+          "passed": true
+        }
+      ],
+      "incident_ids": [
+        "INC-20260823-31C1D3"
+      ]
+    },
+    {
+      "id": "FAC-003",
+      "domain": "facility_power",
+      "title": "普通机房单路掉电但设备在线",
+      "origin": "dcim_webhook",
+      "passed": true,
+      "checks": [
+        {
+          "name": "故障分类",
+          "actual": "facility",
+          "expected": "facility",
+          "passed": true
+        },
+        {
+          "name": "需要现场介入",
+          "actual": true,
+          "expected": true,
+          "passed": true
+        },
+        {
+          "name": "CC提醒",
+          "actual": false,
+          "expected": false,
+          "passed": true
+        },
+        {
+          "name": "重大事件判断",
+          "actual": "not_required",
+          "expected": "not_required",
+          "passed": true
+        },
+        {
+          "name": "事实类型",
+          "actual": [
+            "no_device_impact",
+            "redundancy_degraded",
+            "single_feed_loss"
+          ],
+          "expected": [
+            "single_feed_loss",
+            "redundancy_degraded"
+          ],
+          "passed": true
+        },
+        {
+          "name": "命中规则",
+          "actual": [
+            "facility_power"
+          ],
+          "expected": [
+            "facility_power"
+          ],
+          "passed": true
+        },
+        {
+          "name": "模拟数据标识",
+          "actual": true,
+          "expected": true,
+          "passed": true
+        }
+      ],
+      "incident_ids": [
+        "INC-20260823-8AEC4E"
+      ]
+    },
+    {
+      "id": "FAC-004",
+      "domain": "facility_water",
+      "title": "普通机房漏水但未影响设备",
+      "origin": "leak_sensor_and_onsite",
+      "passed": true,
+      "checks": [
+        {
+          "name": "故障分类",
+          "actual": "facility",
+          "expected": "facility",
+          "passed": true
+        },
+        {
+          "name": "需要现场介入",
+          "actual": true,
+          "expected": true,
+          "passed": true
+        },
+        {
+          "name": "CC提醒",
+          "actual": false,
+          "expected": false,
+          "passed": true
+        },
+        {
+          "name": "重大事件判断",
+          "actual": "not_required",
+          "expected": "not_required",
+          "passed": true
+        },
+        {
+          "name": "事实类型",
+          "actual": [
+            "no_device_impact",
+            "water_leak"
+          ],
+          "expected": [
+            "water_leak",
+            "no_device_impact"
+          ],
+          "passed": true
+        },
+        {
+          "name": "命中规则",
+          "actual": [
+            "facility_water"
+          ],
+          "expected": [
+            "facility_water"
+          ],
+          "passed": true
+        },
+        {
+          "name": "模拟数据标识",
+          "actual": true,
+          "expected": true,
+          "passed": true
+        }
+      ],
+      "incident_ids": [
+        "INC-20260823-E43D5A"
+      ]
+    },
+    {
+      "id": "FAC-005",
+      "domain": "facility_water",
+      "title": "漏水导致核心交换机故障",
+      "origin": "dcim_nms_and_onsite",
+      "passed": true,
+      "checks": [
+        {
+          "name": "故障分类",
+          "actual": "facility",
+          "expected": "facility",
+          "passed": true
+        },
+        {
+          "name": "需要现场介入",
+          "actual": true,
+          "expected": true,
+          "passed": true
+        },
+        {
+          "name": "CC提醒",
+          "actual": true,
+          "expected": true,
+          "passed": true
+        },
+        {
+          "name": "重大事件判断",
+          "actual": "required",
+          "expected": "required",
+          "passed": true
+        },
+        {
+          "name": "事件数量",
+          "actual": 1,
+          "expected": 1,
+          "passed": true
+        },
+        {
+          "name": "输入数量",
+          "actual": 2,
+          "expected": 2,
+          "passed": true
+        },
+        {
+          "name": "事实类型",
+          "actual": [
+            "core_device_failure",
+            "core_switch_outage",
+            "water_leak"
+          ],
+          "expected": [
+            "water_leak",
+            "core_device_failure"
+          ],
+          "passed": true
+        },
+        {
+          "name": "命中规则",
+          "actual": [
+            "facility_water",
+            "network_core_outage"
+          ],
+          "expected": [
+            "facility_water"
+          ],
+          "passed": true
+        },
+        {
+          "name": "模拟数据标识",
+          "actual": true,
+          "expected": true,
+          "passed": true
+        }
+      ],
+      "incident_ids": [
+        "INC-20260823-5DDEFB"
+      ]
+    },
+    {
+      "id": "FAC-006",
+      "domain": "facility_temperature",
+      "title": "温度升高但没有达到CC条件",
+      "origin": "dcim_webhook",
+      "passed": true,
+      "checks": [
+        {
+          "name": "故障分类",
+          "actual": "facility",
+          "expected": "facility",
+          "passed": true
+        },
+        {
+          "name": "需要现场介入",
+          "actual": true,
+          "expected": true,
+          "passed": true
+        },
+        {
+          "name": "CC提醒",
+          "actual": false,
+          "expected": false,
+          "passed": true
+        },
+        {
+          "name": "重大事件判断",
+          "actual": "not_required",
+          "expected": "not_required",
+          "passed": true
+        },
+        {
+          "name": "事实类型",
+          "actual": [
+            "no_device_impact",
+            "temperature"
+          ],
+          "expected": [
+            "temperature",
+            "no_device_impact"
+          ],
+          "passed": true
+        },
+        {
+          "name": "命中规则",
+          "actual": [
+            "facility_temperature"
+          ],
+          "expected": [
+            "facility_temperature"
+          ],
+          "passed": true
+        },
+        {
+          "name": "模拟数据标识",
+          "actual": true,
+          "expected": true,
+          "passed": true
+        }
+      ],
+      "incident_ids": [
+        "INC-20260823-231258"
+      ]
+    },
+    {
+      "id": "FAC-007",
+      "domain": "facility_power",
+      "title": "机房等级未知时双路掉电等待确认",
+      "origin": "dcim_webhook",
+      "passed": true,
+      "checks": [
+        {
+          "name": "故障分类",
+          "actual": "facility",
+          "expected": "facility",
+          "passed": true
+        },
+        {
+          "name": "需要现场介入",
+          "actual": true,
+          "expected": true,
+          "passed": true
+        },
+        {
+          "name": "CC提醒",
+          "actual": false,
+          "expected": false,
+          "passed": true
+        },
+        {
+          "name": "重大事件判断",
+          "actual": "needs_confirmation",
+          "expected": "needs_confirmation",
+          "passed": true
+        },
+        {
+          "name": "事实类型",
+          "actual": [
+            "dual_feed_loss",
+            "single_feed_loss"
+          ],
+          "expected": [
+            "dual_feed_loss"
+          ],
+          "passed": true
+        },
+        {
+          "name": "命中规则",
+          "actual": [
+            "facility_power"
+          ],
+          "expected": [
+            "facility_power"
+          ],
+          "passed": true
+        },
+        {
+          "name": "不得误命中规则",
+          "actual": [
+            "facility_power"
+          ],
+          "expected": [
+            "system_memory_pressure"
+          ],
+          "passed": true
+        },
+        {
+          "name": "模拟数据标识",
+          "actual": true,
+          "expected": true,
+          "passed": true
+        }
+      ],
+      "incident_ids": [
+        "INC-20260823-E86986"
+      ]
+    },
+    {
+      "id": "FAC-008",
+      "domain": "facility_fire",
+      "title": "烟雾告警等待SOP确认",
+      "origin": "environment_sensor",
+      "passed": true,
+      "checks": [
+        {
+          "name": "故障分类",
+          "actual": "facility",
+          "expected": "facility",
+          "passed": true
+        },
+        {
+          "name": "需要现场介入",
+          "actual": true,
+          "expected": true,
+          "passed": true
+        },
+        {
+          "name": "CC提醒",
+          "actual": false,
+          "expected": false,
+          "passed": true
+        },
+        {
+          "name": "重大事件判断",
+          "actual": "needs_confirmation",
+          "expected": "needs_confirmation",
+          "passed": true
+        },
+        {
+          "name": "事实类型",
+          "actual": [
+            "smoke_alarm"
+          ],
+          "expected": [
+            "smoke_alarm"
+          ],
+          "passed": true
+        },
+        {
+          "name": "命中规则",
+          "actual": [
+            "facility_fire"
+          ],
+          "expected": [
+            "facility_fire"
+          ],
+          "passed": true
+        },
+        {
+          "name": "模拟数据标识",
+          "actual": true,
+          "expected": true,
+          "passed": true
+        }
+      ],
+      "incident_ids": [
+        "INC-20260823-A2AE7B"
+      ]
+    }
+  ]
+}

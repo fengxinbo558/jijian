@@ -148,6 +148,213 @@ DEMO_CASES: Dict[str, Dict[str, Any]] = {
             },
         ],
     },
+    "core-single-feed": {
+        "name": "核心机房单路掉电",
+        "description": "A路供电中断、B路仍带载；核心机房按已确认矩阵产生一次CC提醒。",
+        "inputs": [
+            {
+                "source": "monitor",
+                "site": "CORE-DEMO",
+                "severity": "critical",
+                "device_type": "facility",
+                "summary": "核心机房A路供电中断",
+                "message": "[SIMULATED] feed A lost; feed B carrying load; devices remain online",
+                "facility_criticality": "core",
+                "event_subtype": "single_feed_loss",
+                "impact_level": "redundancy_degraded",
+                "incident_key": "DEMO-CORE-POWER-01",
+            }
+        ],
+    },
+    "normal-single-feed": {
+        "name": "普通机房单路掉电",
+        "description": "单路供电中断但设备在线；进入动力与接口人处理，不误触发CC。",
+        "inputs": [
+            {
+                "source": "monitor",
+                "site": "NORMAL-DEMO",
+                "severity": "warning",
+                "device_type": "facility",
+                "summary": "普通机房A路供电中断",
+                "message": "[SIMULATED] feed A lost; feed B healthy; no device outage",
+                "facility_criticality": "normal",
+                "event_subtype": "single_feed_loss",
+                "impact_level": "redundancy_degraded",
+            }
+        ],
+    },
+    "water-core-switch": {
+        "name": "漏水导致核心交换机故障",
+        "description": "动环、NMS与现场证据合并；核心设备已受影响时触发一次CC提醒。",
+        "inputs": [
+            {
+                "source": "monitor",
+                "site": "CORE-DEMO",
+                "severity": "critical",
+                "sn": "SIM-CORE-WATER-SW-001",
+                "device_name": "core-water-switch-01",
+                "rack_position": "CORE-NET-A-01",
+                "device_type": "switch",
+                "summary": "漏水区域核心交换机宕机",
+                "message": "[SIMULATED] water leak alarm; core switch unreachable; downstream links down",
+                "facility_criticality": "core",
+                "asset_criticality": "core",
+                "event_subtype": "water_caused_core_device_failure",
+                "impact_level": "widespread_outage",
+                "incident_key": "DEMO-WATER-CORE-01",
+                "power_permission": "forbidden",
+            },
+            {
+                "source": "onsite",
+                "site": "CORE-DEMO",
+                "severity": "critical",
+                "sn": "SIM-CORE-WATER-SW-001",
+                "device_name": "core-water-switch-01",
+                "rack_position": "CORE-NET-A-01",
+                "device_type": "switch",
+                "summary": "现场确认机柜顶部存在进水痕迹",
+                "observation": "[SIMULATED] 核心交换机电源灯灭，禁止现场自行上电",
+                "facility_criticality": "core",
+                "asset_criticality": "core",
+                "event_subtype": "water_caused_core_device_failure",
+                "impact_level": "widespread_outage",
+                "incident_key": "DEMO-WATER-CORE-01",
+                "power_permission": "forbidden",
+            },
+        ],
+    },
+    "network-bgp": {
+        "name": "BGP邻居会话下降",
+        "description": "先区分对端、承载链路、计时器和控制面，不把邻居down直接当硬件损坏。",
+        "inputs": [
+            {
+                "source": "log",
+                "site": "NORMAL-DEMO",
+                "severity": "critical",
+                "sn": "SIM-BGP-SW-001",
+                "device_name": "normal-border-01",
+                "rack_position": "NORMAL-NET-B-01",
+                "device_type": "switch",
+                "summary": "BGP邻居中断",
+                "log_text": "[SIMULATED] bgp: neighbor 192.0.2.10 state changed Established -> Idle; hold timer expired",
+            }
+        ],
+    },
+    "network-lacp": {
+        "name": "LACP成员退出但聚合仍在线",
+        "description": "识别冗余降低；如果链路已经恢复，不再把排查步骤一条路走到底。",
+        "inputs": [
+            {
+                "source": "log",
+                "site": "NORMAL-DEMO",
+                "severity": "warning",
+                "sn": "SIM-LACP-SW-001",
+                "device_name": "normal-tor-lacp-01",
+                "rack_position": "NORMAL-NET-L-01",
+                "device_type": "switch",
+                "summary": "聚合链路冗余降低",
+                "log_text": "[SIMULATED] lacp: member Ethernet1/53 removed from Port-Channel10; bundle remains up with 1 of 2 links",
+                "power_permission": "forbidden",
+            }
+        ],
+    },
+    "network-core-outage": {
+        "name": "核心交换机宕机与下联批量中断",
+        "description": "三条告警归到一个共同事故，只产生一次CC提醒并保留每台设备。",
+        "inputs": [
+            {
+                "source": "monitor",
+                "site": "CORE-DEMO",
+                "severity": "critical",
+                "sn": "SIM-CORE-NET-SW-001",
+                "device_name": "core-switch-01",
+                "rack_position": "CORE-NET-C-01",
+                "device_type": "switch",
+                "summary": "核心交换机不可达且48条下联中断",
+                "message": "[SIMULATED] core switch unreachable; 48 downstream links down",
+                "facility_criticality": "core",
+                "asset_criticality": "core",
+                "event_subtype": "core_switch_outage",
+                "impact_level": "widespread_outage",
+                "incident_key": "DEMO-CORE-NET-01",
+            },
+            {
+                "source": "monitor",
+                "site": "CORE-DEMO",
+                "severity": "critical",
+                "sn": "SIM-CORE-NET-SERVER-01",
+                "rack_position": "CORE-SRV-C-01",
+                "device_type": "server",
+                "summary": "下联服务器网络不可达",
+                "message": "[SIMULATED] host network unreachable after upstream loss",
+                "facility_criticality": "core",
+                "impact_level": "widespread_outage",
+                "incident_key": "DEMO-CORE-NET-01",
+            },
+            {
+                "source": "monitor",
+                "site": "CORE-DEMO",
+                "severity": "critical",
+                "sn": "SIM-CORE-NET-SERVER-02",
+                "rack_position": "CORE-SRV-C-02",
+                "device_type": "server",
+                "summary": "另一台下联服务器网络不可达",
+                "message": "[SIMULATED] host network unreachable after upstream loss",
+                "facility_criticality": "core",
+                "impact_level": "widespread_outage",
+                "incident_key": "DEMO-CORE-NET-01",
+            },
+        ],
+    },
+    "kernel-watchdog": {
+        "name": "内核soft lockup与watchdog重启",
+        "description": "保留内核、驱动、硬件和I/O候选，不把自动重启直接认定成主板故障。",
+        "inputs": [
+            {
+                "source": "log",
+                "site": "NORMAL-DEMO",
+                "severity": "critical",
+                "sn": "SIM-WATCHDOG-001",
+                "rack_position": "NORMAL-SRV-W-01",
+                "device_type": "server",
+                "summary": "服务器失去响应后自动重启",
+                "log_text": "[SIMULATED] kernel: watchdog: BUG: soft lockup - CPU#12 stuck for 32s\n[SIMULATED] kernel: watchdog initiated emergency restart",
+            }
+        ],
+    },
+    "application-dns-tls": {
+        "name": "应用DNS与TLS依赖异常",
+        "description": "分别验证域名解析、网络连接、证书与主机时间，不读取客户源代码。",
+        "inputs": [
+            {
+                "source": "log",
+                "site": "NORMAL-DEMO",
+                "severity": "warning",
+                "sn": "SIM-APP-DNS-TLS-001",
+                "rack_position": "NORMAL-APP-D-01",
+                "device_type": "server",
+                "summary": "内部HTTPS依赖调用失败",
+                "log_text": "[SIMULATED] resolver: lookup api.internal: Temporary failure in name resolution\n[SIMULATED] proxy: TLS certificate has expired for fallback.internal",
+            }
+        ],
+    },
+    "facility-smoke": {
+        "name": "烟雾告警等待SOP确认",
+        "description": "按最高风险展示，但没有内部SOP确认前不由AI擅自触发CC。",
+        "inputs": [
+            {
+                "source": "monitor",
+                "site": "NORMAL-DEMO",
+                "severity": "critical",
+                "device_type": "facility",
+                "summary": "机柜上方烟雾传感器告警",
+                "message": "[SIMULATED] smoke detector zone Z-12 active; no fire confirmation",
+                "facility_criticality": "normal",
+                "event_subtype": "smoke_alarm",
+                "impact_level": "alarm_only",
+            }
+        ],
+    },
 }
 
 
@@ -156,4 +363,3 @@ def list_demos() -> List[Dict[str, str]]:
         {"id": key, "name": value["name"], "description": value["description"]}
         for key, value in DEMO_CASES.items()
     ]
-

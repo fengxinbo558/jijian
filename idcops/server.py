@@ -45,7 +45,7 @@ class AppHTTPServer(ThreadingHTTPServer):
 
 
 class RequestHandler(BaseHTTPRequestHandler):
-    server_version = "IDCAIOps/0.2"
+    server_version = "IDCAIOps/0.4"
 
     @property
     def app(self) -> AppHTTPServer:
@@ -95,6 +95,11 @@ class RequestHandler(BaseHTTPRequestHandler):
                 for incident in incidents:
                     counts[incident["status"]] = counts.get(incident["status"], 0) + 1
                 self._json(HTTPStatus.OK, {"items": incidents, "counts": counts})
+            elif path == "/api/facilities":
+                self._json(
+                    HTTPStatus.OK,
+                    {"items": self.app.service.list_facility_profiles()},
+                )
             elif path.startswith("/api/incidents/"):
                 incident_id = unquote(path.removeprefix("/api/incidents/"))
                 incident = self.app.service.get_incident(incident_id)
@@ -148,6 +153,9 @@ class RequestHandler(BaseHTTPRequestHandler):
                     HTTPStatus.OK,
                     {"items": self.app.service.source_statuses(check_external=True)},
                 )
+            elif path == "/api/facilities":
+                profile = self.app.service.upsert_facility_profile(payload)
+                self._json(HTTPStatus.OK, profile)
             elif path.startswith("/api/demos/") and path.endswith("/run"):
                 demo_id = unquote(path.removeprefix("/api/demos/").removesuffix("/run"))
                 case = DEMO_CASES.get(demo_id)

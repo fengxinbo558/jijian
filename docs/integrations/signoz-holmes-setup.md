@@ -88,12 +88,26 @@ POST /api/ingest/signoz-alert
 
 机鉴读取常见的 `alerts[].labels`、`alerts[].annotations`、`startsAt` 和 `fingerprint`，转换成统一事件。完整 SN、机架位和设备类型最好作为告警标签直接传入；如果没有，机鉴会明确标为缺失，不从相似设备猜测。
 
-## 7. 交换机、BMC 与资产系统
+## 7. 网络日志到底怎么来
+
+交换机日志不是机鉴凭空产生的。真实环境通常有两条入口，可以同时使用：
+
+1. 交换机把 syslog 主动发送给现有 syslog 中心、Grafana Alloy、Vector、Fluent Bit 或 OpenTelemetry Collector，再进入 SigNoz/Loki；
+2. Zabbix、LibreNMS 或客户现有 NMS 通过 SNMP、Telemetry 和 ICMP 发现端口、路由邻居、模块、电源等异常，再把告警通过 `POST /api/ingest/alert` 送入机鉴。
+
+机鉴接收的最小字段建议包含：事件时间、机房编码、设备名或管理 IP、完整设备 SN（若 NMS 有）、机架位、端口、厂商原始消息和 NMS 告警 ID。同一个 NMS 告警 ID 可作为 `incident_key`，让 syslog、指标和现场反馈进入同一事件，而不是仅靠关键词强行合并。
+
+当前版本已经能分析 link down/flap、光功率、CRC、LACP/Bond、BGP、OSPF、STP/BPDU Guard、MAC flap、MLAG、交换机电源和核心交换机大范围中断的合成日志；尚未连接客户网络设备，页面会如实显示“等待客户接口”。
+
+可选的中心 syslog 模板位于 `deploy/otel/network-syslog.yaml`。它默认监听 TCP 54527，只有在管理网络 ACL、发送源白名单和保留策略确认后才能部署；模板存在不等于当前电脑已经收到交换机日志。
+
+## 8. BMC、动环与资产系统
 
 本轮没有假装已连接真实设备。后续按同一边界扩展：
 
 - 交换机：优先接现有 NMS/LibreNMS/Zabbix 告警和指标；没有现有平台时再考虑 SNMP Exporter。
 - BMC：通过厂商管理平台或 Redfish 的只读账号读取 SEL、温度、风扇、电源和硬件状态。
+- 动环/DCIM：通过已有平台告警 Webhook 接收温度、供电、漏水和烟雾事件；CC 判断还必须结合机房等级与实际设备影响。
 - OMS/CMDB：只读查询完整 SN、机架位、业务状态和资产关系；上线/下线备件仍由既有资产流程确认。
 
 这些连接器都必须先经过权限、字段和脱敏审核，不能用一个“万能 root 账号”解决。

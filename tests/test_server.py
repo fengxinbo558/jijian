@@ -2,6 +2,7 @@ import json
 import tempfile
 import threading
 import unittest
+import urllib.error
 import urllib.request
 from pathlib import Path
 
@@ -40,7 +41,7 @@ class ServerIntegrationTests(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertTrue(health["ok"])
         self.assertEqual(health["analysis_mode"], "rules_only")
-        self.assertEqual(health["knowledge"]["card_count"], 40)
+        self.assertGreaterEqual(health["knowledge"]["card_count"], 48)
         self.assertEqual(health["collectors_connected"], [])
         status, incident = self.request_json(
             "/api/ingest/alert",
@@ -147,6 +148,52 @@ class ServerIntegrationTests(unittest.TestCase):
             investigated["investigation"]["external_checks"][0]["state"],
             "not_configured",
         )
+
+    def test_facility_profile_endpoint_controls_cc_matrix(self):
+        status, empty = self.request_json("/api/facilities")
+        self.assertEqual(status, 200)
+        self.assertEqual(empty["items"], [])
+
+        status, profile = self.request_json(
+            "/api/facilities",
+            {
+                "site": "core-a",
+                "display_name": "测试核心机房",
+                "criticality": "core",
+            },
+        )
+        self.assertEqual(status, 200)
+        self.assertEqual(profile["site"], "CORE-A")
+        self.assertEqual(profile["criticality"], "core")
+
+        _status, listing = self.request_json("/api/facilities")
+        self.assertEqual(listing["items"][0]["display_name"], "测试核心机房")
+
+        status, incident = self.request_json(
+            "/api/ingest/alert",
+            {
+                "site": "CORE-A",
+                "summary": "核心机房单路掉电",
+                "message": "utility feed A lost; feed B healthy",
+                "device_type": "facility",
+                "facility_criticality": "unknown",
+            },
+        )
+        self.assertEqual(status, 201)
+        assessment = incident["analysis"]["facility_assessment"]
+        self.assertEqual(assessment["facility"]["source"], "local_config")
+        self.assertEqual(assessment["decision"], "required")
+        self.assertTrue(incident["cc_reminder"]["required"])
+
+        request = urllib.request.Request(
+            self.base + "/api/facilities",
+            data=json.dumps({"site": "BAD", "criticality": "important"}).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with self.assertRaises(urllib.error.HTTPError) as raised:
+            urllib.request.urlopen(request, timeout=3)
+        self.assertEqual(raised.exception.code, 400)
 
 
 if __name__ == "__main__":

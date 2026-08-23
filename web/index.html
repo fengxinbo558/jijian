@@ -31,6 +31,10 @@
           <span class="rail-icon" aria-hidden="true">源</span>
           <span>数据来源</span>
         </button>
+        <button class="rail-button" data-action="open-facilities" type="button">
+          <span class="rail-icon" aria-hidden="true">房</span>
+          <span>机房等级</span>
+        </button>
       </nav>
       <div class="system-pulse" id="systemPulse" title="本地服务状态">
         <span class="pulse-dot" aria-hidden="true"></span>
@@ -121,6 +125,7 @@
           <label>完整 SN<input name="sn" placeholder="禁止只填尾号"></label>
           <label>机架位<input name="rack_position" placeholder="如 BJYZD2SC-A-08-10"></label>
           <label>设备名<input name="device_name" placeholder="主机名或交换机名"></label>
+          <label>机房等级<select name="facility_criticality"><option value="unknown">未确认</option><option value="normal">普通机房</option><option value="core">核心机房</option></select></label>
         </div>
         <label class="wide-field">异常摘要<input name="summary" placeholder="一句话说明当前现象" required></label>
         <label class="file-drop" for="logFile">
@@ -151,6 +156,7 @@
           <label>设备名<input name="device_name"></label>
           <label>设备类型<select name="device_type"><option value="server">服务器</option><option value="switch">交换机</option><option value="facility">动环/设施</option><option value="unknown">未知</option></select></label>
           <label>严重度<select name="severity"><option value="warning">警告</option><option value="critical">严重</option><option value="unknown">未知</option></select></label>
+          <label>机房等级<select name="facility_criticality"><option value="unknown">未确认</option><option value="normal">普通机房</option><option value="core">核心机房</option></select></label>
         </div>
         <label class="wide-field">现场观察<textarea name="observation" rows="6" placeholder="写明看到、听到、测到的现象，不需要先猜根因" required></textarea></label>
         <div class="form-grid compact-fields">
@@ -202,6 +208,26 @@
           </form>
         </div>
       </details>
+    </div>
+  </dialog>
+
+  <dialog class="work-dialog facility-dialog" id="facilityDialog" aria-labelledby="facilityTitle">
+    <div class="dialog-frame">
+      <header class="dialog-header">
+        <div>
+          <p class="eyebrow">FACILITY LEVEL</p>
+          <h2 id="facilityTitle">标记核心机房与普通机房</h2>
+        </div>
+        <button class="icon-button" data-close-dialog type="button" aria-label="关闭">×</button>
+      </header>
+      <p class="dialog-intro">目前可以先在本机标注；以后接入资产系统后，资产数据可以替换本地值并保留变更记录。系统不会根据机房名称猜测等级。</p>
+      <form class="facility-form" id="facilityForm">
+        <label>机房编码<input name="site" placeholder="例如 BJYZ" required></label>
+        <label>显示名称<input name="display_name" placeholder="例如 北京亦庄机房"></label>
+        <label>机房等级<select name="criticality"><option value="unknown">未确认</option><option value="normal">普通机房</option><option value="core">核心机房</option></select></label>
+        <button class="primary-button" type="submit">保存标注</button>
+      </form>
+      <div class="facility-grid" id="facilityGrid" aria-live="polite"></div>
     </div>
   </dialog>
 

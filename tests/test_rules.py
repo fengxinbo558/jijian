@@ -37,6 +37,20 @@ class RuleAnalysisTests(unittest.TestCase):
         self.assertEqual(analysis.category, "system")
         self.assertFalse(analysis.requires_onsite)
 
+    def test_room_word_does_not_match_oom_abbreviation(self):
+        event = normalize_input(
+            "monitor",
+            {
+                "site": "UNKNOWN-DEMO",
+                "device_type": "facility",
+                "summary": "双路供电中断",
+                "message": "feed A lost; feed B lost; room criticality unavailable",
+            },
+        )
+        analysis = analyze_rules(event)
+        self.assertEqual(analysis.category, "facility")
+        self.assertNotIn("system_memory_pressure", analysis.matched_rules)
+
     def test_temperature_never_implies_cc_without_explicit_signal(self):
         event = NormalizedInput.from_mapping(
             {
@@ -63,4 +77,3 @@ class RuleAnalysisTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

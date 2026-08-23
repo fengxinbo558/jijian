@@ -1,0 +1,54 @@
+# Optional central syslog receiver for network devices.
+# This file is a deployment template, not an enabled local connection.
+# Keep port 54527 behind an IDC management-network ACL and restrict sender IPs.
+
+extensions:
+  health_check:
+    endpoint: 127.0.0.1:13133
+
+receivers:
+  syslog/network:
+    tcp:
+      listen_address: 0.0.0.0:54527
+    protocol: rfc3164
+    location: UTC
+    operators:
+      - type: move
+        from: attributes.message
+        to: body
+
+processors:
+  memory_limiter:
+    check_interval: 5s
+    limit_mib: 512
+    spike_limit_mib: 128
+
+  resource/idc_network_source:
+    attributes:
+      - key: telemetry.source.kind
+        value: network_syslog
+        action: upsert
+      - key: site.code
+        value: ${env:IDC_SITE_CODE}
+        action: upsert
+
+  batch:
+    timeout: 5s
+    send_batch_size: 1024
+
+exporters:
+  otlp/signoz:
+    endpoint: ${env:SIGNOZ_OTLP_ENDPOINT}
+    tls:
+      insecure: ${env:SIGNOZ_OTLP_INSECURE}
+
+service:
+  extensions: [health_check]
+  telemetry:
+    logs:
+      level: info
+  pipelines:
+    logs/network:
+      receivers: [syslog/network]
+      processors: [memory_limiter, resource/idc_network_source, batch]
+      exporters: [otlp/signoz]

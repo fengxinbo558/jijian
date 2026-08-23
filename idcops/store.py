@@ -95,6 +95,24 @@ class IncidentStore:
                     created_at TEXT NOT NULL,
                     FOREIGN KEY(incident_id) REFERENCES incidents(id)
                 );
+
+                CREATE TABLE IF NOT EXISTS facility_profiles (
+                    site TEXT PRIMARY KEY,
+                    display_name TEXT NOT NULL,
+                    criticality TEXT NOT NULL,
+                    source TEXT NOT NULL,
+                    source_reference TEXT NOT NULL,
+                    effective_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS facility_profile_history (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    site TEXT NOT NULL,
+                    previous_json TEXT NOT NULL,
+                    current_json TEXT NOT NULL,
+                    changed_at TEXT NOT NULL
+                );
                 """
             )
             columns = {
@@ -105,6 +123,77 @@ class IncidentStore:
                 connection.execute(
                     "ALTER TABLE incidents ADD COLUMN investigation_json TEXT NOT NULL DEFAULT '{}'"
                 )
+
+    def list_facility_profiles(self) -> List[Dict[str, Any]]:
+        with self.connect() as connection:
+            rows = connection.execute(
+                "SELECT * FROM facility_profiles ORDER BY site"
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def get_facility_profile(self, site: str) -> Optional[Dict[str, Any]]:
+        normalized = str(site or "").strip().upper()
+        if not normalized:
+            return None
+        with self.connect() as connection:
+            row = connection.execute(
+                "SELECT * FROM facility_profiles WHERE site = ?", (normalized,)
+            ).fetchone()
+        return dict(row) if row is not None else None
+
+    def upsert_facility_profile(self, profile: Mapping[str, Any]) -> Dict[str, Any]:
+        now = utc_now()
+        site = str(profile["site"]).strip().upper()
+        current = {
+            "site": site,
+            "display_name": str(profile.get("display_name") or site),
+            "criticality": str(profile.get("criticality") or "unknown"),
+            "source": str(profile.get("source") or "local_config"),
+            "source_reference": str(profile.get("source_reference") or ""),
+            "effective_at": str(profile.get("effective_at") or now),
+            "updated_at": now,
+        }
+        with self.connect() as connection:
+            row = connection.execute(
+                "SELECT * FROM facility_profiles WHERE site = ?", (site,)
+            ).fetchone()
+            previous = dict(row) if row is not None else {}
+            connection.execute(
+                """
+                INSERT INTO facility_profiles (
+                    site, display_name, criticality, source, source_reference,
+                    effective_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(site) DO UPDATE SET
+                    display_name=excluded.display_name,
+                    criticality=excluded.criticality,
+                    source=excluded.source,
+                    source_reference=excluded.source_reference,
+                    effective_at=excluded.effective_at,
+                    updated_at=excluded.updated_at
+                """,
+                (
+                    current["site"],
+                    current["display_name"],
+                    current["criticality"],
+                    current["source"],
+                    current["source_reference"],
+                    current["effective_at"],
+                    current["updated_at"],
+                ),
+            )
+            if previous != current:
+                connection.execute(
+                    """
+                    INSERT INTO facility_profile_history (
+                        site, previous_json, current_json, changed_at
+                    ) VALUES (?, ?, ?, ?)
+                    """,
+                    (site, _dump(previous), _dump(current), now),
+                )
+        result = self.get_facility_profile(site)
+        assert result is not None
+        return result
 
     @staticmethod
     def _decode(row: sqlite3.Row) -> Dict[str, Any]:

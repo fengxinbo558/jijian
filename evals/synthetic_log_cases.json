@@ -1,0 +1,303 @@
+{
+  "version": "1.0",
+  "generated": true,
+  "description": "网络、Linux、应用与机房基础设施合成日志测试集；所有设备、时间、地址和日志均为测试数据。",
+  "safety_note": "这些日志只用于验证分类、事实提取、调查分支和CC边界，不代表真实厂商日志或生产定位准确率。",
+  "cases": [
+    {
+      "id": "LNX-001",
+      "domain": "linux_system",
+      "title": "OOM终止Java进程",
+      "origin": "journald/kernel",
+      "inputs": [{"source": "log", "payload": {"site": "NORMAL-DEMO", "sn": "SIM-LNX-001", "rack_position": "NORM-A-01-01", "device_type": "server", "summary": "Java服务异常退出", "log_text": "[SIMULATED] kernel: Out of memory: Killed process 18422 (java) total-vm:24881920kB anon-rss:12177844kB"}}],
+      "expected": {"category": "system", "fact_types_contains": ["oom_kill"], "matched_rules_contains": ["system_memory_pressure"], "requires_onsite": false, "cc_decision": "not_required", "candidate_contains": "进程内存"}
+    },
+    {
+      "id": "LNX-002",
+      "domain": "linux_storage",
+      "title": "磁盘I/O错误导致文件系统只读",
+      "origin": "journald/kernel",
+      "inputs": [{"source": "log", "payload": {"site": "NORMAL-DEMO", "sn": "SIM-LNX-002", "rack_position": "NORM-A-01-02", "device_type": "server", "summary": "数据盘写入失败", "log_text": "[SIMULATED] kernel: blk_update_request: I/O error, dev sdb, sector 992018\n[SIMULATED] kernel: EXT4-fs error (device sdb1): remounting filesystem read-only", "power_permission": "confirm"}}],
+      "expected": {"category": "hardware", "fact_types_contains": ["block_io_error", "filesystem_read_only"], "matched_rules_contains": ["disk_io"], "requires_onsite": true, "cc_decision": "not_required", "candidate_contains": "磁盘"}
+    },
+    {
+      "id": "LNX-003",
+      "domain": "linux_storage",
+      "title": "inode耗尽而非磁盘介质故障",
+      "origin": "application_file",
+      "inputs": [{"source": "log", "payload": {"site": "NORMAL-DEMO", "sn": "SIM-LNX-003", "rack_position": "NORM-A-01-03", "device_type": "server", "summary": "应用无法创建临时文件", "log_text": "[SIMULATED] worker: create /var/lib/app/tmp/job-8821 failed: No space left on device\n[SIMULATED] node_exporter: filesystem_files_free{mountpoint=\"/var/lib/app\"}=0"}}],
+      "expected": {"category": "hardware", "fact_types_contains": ["space_exhausted", "inode_exhausted"], "matched_rules_contains": ["disk_io"], "requires_onsite": true, "cc_decision": "not_required", "suggestion_contains": "inode"}
+    },
+    {
+      "id": "LNX-004",
+      "domain": "linux_storage",
+      "title": "NVMe介质与健康告警",
+      "origin": "smart_nvme_file",
+      "inputs": [{"source": "log", "payload": {"site": "NORMAL-DEMO", "sn": "SIM-LNX-004", "rack_position": "NORM-A-01-04", "device_type": "server", "summary": "NVMe健康异常", "log_text": "[SIMULATED] nvme smart-log /dev/nvme1: critical_warning=0x04 media_errors=27 num_err_log_entries=31"}}],
+      "expected": {"category": "hardware", "fact_types_contains": ["nvme_health"], "matched_rules_contains": ["disk_io"], "requires_onsite": true, "cc_decision": "not_required", "candidate_contains": "磁盘"}
+    },
+    {
+      "id": "LNX-005",
+      "domain": "linux_ras",
+      "title": "ECC可纠正错误不直接确认坏条",
+      "origin": "journald/edac",
+      "inputs": [{"source": "log", "payload": {"site": "NORMAL-DEMO", "sn": "SIM-LNX-005", "rack_position": "NORM-A-01-05", "device_type": "server", "summary": "内存可纠正错误计数增长", "log_text": "[SIMULATED] EDAC MC0: Corrected memory error; socket=0 channel=A dimm=1 count=16"}}],
+      "expected": {"category": "hardware", "fact_types_contains": ["memory_ce", "memory_locator"], "matched_rules_contains": ["memory_machine_check"], "requires_onsite": true, "cc_decision": "not_required", "conclusion_not_confirmed": true}
+    },
+    {
+      "id": "LNX-006",
+      "domain": "linux_ras",
+      "title": "ECC不可纠正错误伴随MCE",
+      "origin": "journald/edac",
+      "inputs": [{"source": "log", "payload": {"site": "NORMAL-DEMO", "sn": "SIM-LNX-006", "rack_position": "NORM-A-01-06", "device_type": "server", "summary": "内存不可纠正错误", "log_text": "[SIMULATED] EDAC MC1: Uncorrected memory error; socket=1 channel=B dimm=0\n[SIMULATED] kernel: Machine Check Exception recorded for memory controller"}}],
+      "expected": {"category": "hardware", "fact_types_contains": ["memory_ue", "machine_check", "memory_locator"], "matched_rules_contains": ["memory_machine_check"], "requires_onsite": true, "cc_decision": "not_required", "candidate_contains": "主板"}
+    },
+    {
+      "id": "LNX-007",
+      "domain": "linux_hardware",
+      "title": "PCIe AER与网卡重置",
+      "origin": "journald/kernel",
+      "inputs": [{"source": "log", "payload": {"site": "NORMAL-DEMO", "sn": "SIM-LNX-007", "rack_position": "NORM-A-01-07", "device_type": "server", "summary": "业务网卡短时中断", "log_text": "[SIMULATED] kernel: pcieport 0000:3a:00.0: AER: Uncorrected (Non-Fatal) error received\n[SIMULATED] kernel: eth2: transmit queue timed out; resetting adapter"}}],
+      "expected": {"category": "hardware", "fact_types_contains": ["pcie_aer", "nic_reset"], "matched_rules_contains": ["hardware_bus"], "requires_onsite": true, "cc_decision": "not_required", "conclusion_not_confirmed": true}
+    },
+    {
+      "id": "LNX-008",
+      "domain": "linux_kernel",
+      "title": "内核软锁死与watchdog",
+      "origin": "journald/kernel",
+      "inputs": [{"source": "log", "payload": {"site": "NORMAL-DEMO", "sn": "SIM-LNX-008", "rack_position": "NORM-A-01-08", "device_type": "server", "summary": "服务器失去响应后自动重启", "log_text": "[SIMULATED] kernel: watchdog: BUG: soft lockup - CPU#12 stuck for 32s\n[SIMULATED] kernel: watchdog initiated emergency restart"}}],
+      "expected": {"category": "system", "fact_types_contains": ["kernel_watchdog"], "matched_rules_contains": ["system_stability"], "requires_onsite": false, "cc_decision": "not_required", "conclusion_not_confirmed": true}
+    },
+    {
+      "id": "LNX-009",
+      "domain": "linux_service",
+      "title": "systemd服务重启循环",
+      "origin": "journald/systemd",
+      "inputs": [{"source": "log", "payload": {"site": "NORMAL-DEMO", "sn": "SIM-LNX-009", "rack_position": "NORM-A-01-09", "device_type": "server", "summary": "采集服务反复退出", "log_text": "[SIMULATED] systemd: collector.service: Main process exited, status=1/FAILURE\n[SIMULATED] systemd: collector.service: Start request repeated too quickly; restart counter is at 8"}}],
+      "expected": {"category": "application", "fact_types_contains": ["service_failed", "restart_loop"], "matched_rules_contains": ["application_runtime"], "requires_onsite": false, "cc_decision": "not_required", "candidate_contains": "依赖"}
+    },
+    {
+      "id": "LNX-010",
+      "domain": "linux_time",
+      "title": "时钟同步失败影响日志排序",
+      "origin": "journald/chrony",
+      "inputs": [{"source": "log", "payload": {"site": "NORMAL-DEMO", "sn": "SIM-LNX-010", "rack_position": "NORM-A-01-10", "device_type": "server", "summary": "主机时间偏移持续扩大", "log_text": "[SIMULATED] chronyd: No selectable sources; NTP synchronization lost\n[SIMULATED] chronyd: System clock wrong by 8.421 seconds"}}],
+      "expected": {"category": "system", "fact_types_contains": ["time_sync_failure"], "matched_rules_contains": ["system_time"], "requires_onsite": false, "cc_decision": "not_required", "suggestion_contains": "时间"}
+    },
+    {
+      "id": "APP-001",
+      "domain": "application",
+      "title": "监听端口冲突",
+      "origin": "application_file",
+      "inputs": [{"source": "log", "payload": {"site": "NORMAL-DEMO", "sn": "SIM-APP-001", "rack_position": "NORM-B-01-01", "device_type": "server", "summary": "订单服务启动失败", "log_text": "[SIMULATED] java.net.BindException: Address already in use: bind 0.0.0.0:8080\n[SIMULATED] systemd: order.service: Failed to start"}}],
+      "expected": {"category": "application", "fact_types_contains": ["port_conflict", "service_failed"], "matched_rules_contains": ["application_runtime"], "requires_onsite": false, "cc_decision": "not_required", "candidate_contains": "端口"}
+    },
+    {
+      "id": "APP-002",
+      "domain": "application",
+      "title": "依赖服务连接被拒绝",
+      "origin": "application_file",
+      "inputs": [{"source": "log", "payload": {"site": "NORMAL-DEMO", "sn": "SIM-APP-002", "rack_position": "NORM-B-01-02", "device_type": "server", "summary": "API无法连接缓存服务", "log_text": "[SIMULATED] api: dependency redis://10.10.20.15:6379 unavailable: Connection refused"}}],
+      "expected": {"category": "application", "fact_types_contains": ["dependency_connection"], "matched_rules_contains": ["application_dependency"], "requires_onsite": false, "cc_decision": "not_required", "candidate_contains": "依赖"}
+    },
+    {
+      "id": "APP-003",
+      "domain": "application",
+      "title": "DNS解析失败",
+      "origin": "application_file",
+      "inputs": [{"source": "log", "payload": {"site": "NORMAL-DEMO", "sn": "SIM-APP-003", "rack_position": "NORM-B-01-03", "device_type": "server", "summary": "服务无法解析数据库域名", "log_text": "[SIMULATED] resolver: lookup db.service.internal: Temporary failure in name resolution\n[SIMULATED] app: database connection skipped because DNS lookup failed"}}],
+      "expected": {"category": "application", "fact_types_contains": ["dns_failure"], "matched_rules_contains": ["application_dependency"], "requires_onsite": false, "cc_decision": "not_required", "candidate_contains": "DNS"}
+    },
+    {
+      "id": "APP-004",
+      "domain": "application",
+      "title": "TLS证书已过期",
+      "origin": "reverse_proxy_file",
+      "inputs": [{"source": "log", "payload": {"site": "NORMAL-DEMO", "sn": "SIM-APP-004", "rack_position": "NORM-B-01-04", "device_type": "server", "summary": "内部HTTPS调用失败", "log_text": "[SIMULATED] proxy: TLS handshake failed for api.internal: certificate has expired; verify error=10"}}],
+      "expected": {"category": "application", "fact_types_contains": ["tls_certificate_expired"], "matched_rules_contains": ["application_dependency"], "requires_onsite": false, "cc_decision": "not_required", "candidate_contains": "证书"}
+    },
+    {
+      "id": "APP-005",
+      "domain": "application",
+      "title": "数据库死锁",
+      "origin": "database_file",
+      "inputs": [{"source": "log", "payload": {"site": "NORMAL-DEMO", "sn": "SIM-APP-005", "rack_position": "NORM-B-01-05", "device_type": "server", "summary": "交易提交间歇失败", "log_text": "[SIMULATED] database: deadlock detected while waiting for row lock; transaction 8821 rolled back"}}],
+      "expected": {"category": "application", "fact_types_contains": ["lock_contention"], "matched_rules_contains": ["application_runtime"], "requires_onsite": false, "cc_decision": "not_required", "candidate_contains": "锁"}
+    },
+    {
+      "id": "NET-001",
+      "domain": "network_interface",
+      "title": "交换机端口运行状态下降",
+      "origin": "network_syslog",
+      "inputs": [{"source": "log", "payload": {"site": "NORMAL-DEMO", "sn": "SIM-SW-001", "rack_position": "NORM-NET-01", "device_name": "normal-tor-01", "device_type": "switch", "summary": "服务器接入口中断", "log_text": "[SIMULATED][RFC5424] normal-tor-01 ifmgr: interface Ethernet1/17 link is down; admin_state=up oper_state=down", "power_permission": "forbidden"}}],
+      "expected": {"category": "network", "fact_types_contains": ["link_down", "network_interface"], "matched_rules_contains": ["network_link"], "requires_onsite": true, "cc_decision": "not_required", "candidate_contains": "线缆"}
+    },
+    {
+      "id": "NET-002",
+      "domain": "network_interface",
+      "title": "端口短时间反复flap",
+      "origin": "network_syslog",
+      "inputs": [{"source": "log", "payload": {"site": "NORMAL-DEMO", "sn": "SIM-SW-002", "rack_position": "NORM-NET-02", "device_name": "normal-tor-02", "device_type": "switch", "summary": "上联端口反复变化", "log_text": "[SIMULATED] normal-tor-02 ifmgr: interface Ethernet1/49 link flap detected 7 times in 60 seconds"}}],
+      "expected": {"category": "network", "fact_types_contains": ["link_flap", "network_interface"], "matched_rules_contains": ["network_link"], "requires_onsite": true, "cc_decision": "not_required", "candidate_contains": "端口"}
+    },
+    {
+      "id": "NET-003",
+      "domain": "network_optics",
+      "title": "接收光功率低",
+      "origin": "network_syslog",
+      "inputs": [{"source": "log", "payload": {"site": "NORMAL-DEMO", "sn": "SIM-SW-003", "rack_position": "NORM-NET-03", "device_name": "normal-tor-03", "device_type": "switch", "summary": "100G上联光功率告警", "log_text": "[SIMULATED] normal-tor-03 optics: interface Ethernet1/51 Rx Power -15.8 dBm below configured low threshold -12.0 dBm"}}],
+      "expected": {"category": "network", "fact_types_contains": ["optical_power", "network_interface"], "matched_rules_contains": ["network_link"], "requires_onsite": true, "cc_decision": "not_required", "candidate_contains": "线缆/光纤", "conclusion_not_confirmed": true}
+    },
+    {
+      "id": "NET-004",
+      "domain": "network_errors",
+      "title": "接口CRC错误持续增长",
+      "origin": "network_syslog",
+      "inputs": [{"source": "log", "payload": {"site": "NORMAL-DEMO", "sn": "SIM-SW-004", "rack_position": "NORM-NET-04", "device_name": "normal-tor-04", "device_type": "switch", "summary": "业务端口丢包", "log_text": "[SIMULATED] normal-tor-04 counters: Ethernet1/22 CRC errors increased from 18 to 728; input errors=735"}}],
+      "expected": {"category": "network", "fact_types_contains": ["crc_error", "network_interface"], "matched_rules_contains": ["network_link"], "requires_onsite": true, "cc_decision": "not_required", "conclusion_not_confirmed": true}
+    },
+    {
+      "id": "NET-005",
+      "domain": "network_redundancy",
+      "title": "LACP成员退出但聚合仍工作",
+      "origin": "network_syslog",
+      "inputs": [{"source": "log", "payload": {"site": "NORMAL-DEMO", "sn": "SIM-SW-005", "rack_position": "NORM-NET-05", "device_name": "normal-tor-05", "device_type": "switch", "summary": "聚合链路冗余降低", "log_text": "[SIMULATED] normal-tor-05 lacp: member Ethernet1/53 removed from Port-Channel10; bundle remains up with 1 of 2 links"}}],
+      "expected": {"category": "network", "fact_types_contains": ["lacp_member_down", "redundancy_degraded"], "matched_rules_contains": ["network_redundancy"], "requires_onsite": true, "cc_decision": "not_required", "candidate_contains": "成员链路"}
+    },
+    {
+      "id": "NET-006",
+      "domain": "network_redundancy",
+      "title": "Linux Bond主备切换",
+      "origin": "journald/kernel",
+      "inputs": [{"source": "log", "payload": {"site": "NORMAL-DEMO", "sn": "SIM-LNX-NET-006", "rack_position": "NORM-C-01-06", "device_type": "server", "summary": "Bond发生主备切换", "log_text": "[SIMULATED] kernel: bond0: link status definitely down for interface eth0\n[SIMULATED] kernel: bond0: active slave changed to eth1; bond remains up"}}],
+      "expected": {"category": "network", "fact_types_contains": ["bond_member_down"], "matched_rules_contains": ["network_redundancy"], "requires_onsite": true, "cc_decision": "not_required", "candidate_contains": "成员链路"}
+    },
+    {
+      "id": "NET-007",
+      "domain": "network_routing",
+      "title": "BGP邻居会话下降",
+      "origin": "network_syslog",
+      "inputs": [{"source": "log", "payload": {"site": "NORMAL-DEMO", "sn": "SIM-SW-007", "rack_position": "NORM-NET-07", "device_name": "normal-border-01", "device_type": "switch", "summary": "BGP邻居中断", "log_text": "[SIMULATED] normal-border-01 bgp: neighbor 192.0.2.10 state changed Established -> Idle; hold timer expired"}}],
+      "expected": {"category": "network", "fact_types_contains": ["bgp_neighbor_down"], "matched_rules_contains": ["network_control_plane"], "requires_onsite": false, "cc_decision": "not_required", "candidate_contains": "BGP"}
+    },
+    {
+      "id": "NET-008",
+      "domain": "network_routing",
+      "title": "OSPF邻接关系下降",
+      "origin": "network_syslog",
+      "inputs": [{"source": "log", "payload": {"site": "NORMAL-DEMO", "sn": "SIM-SW-008", "rack_position": "NORM-NET-08", "device_name": "normal-spine-01", "device_type": "switch", "summary": "OSPF邻接中断", "log_text": "[SIMULATED] normal-spine-01 ospf: neighbor 198.51.100.2 on Ethernet1/1 changed Full -> Down; dead timer expired"}}],
+      "expected": {"category": "network", "fact_types_contains": ["ospf_neighbor_down"], "matched_rules_contains": ["network_control_plane"], "requires_onsite": false, "cc_decision": "not_required", "candidate_contains": "OSPF"}
+    },
+    {
+      "id": "NET-009",
+      "domain": "network_layer2",
+      "title": "BPDU Guard阻断接入口",
+      "origin": "network_syslog",
+      "inputs": [{"source": "log", "payload": {"site": "NORMAL-DEMO", "sn": "SIM-SW-009", "rack_position": "NORM-NET-09", "device_name": "normal-tor-09", "device_type": "switch", "summary": "端口被环路保护关闭", "log_text": "[SIMULATED] normal-tor-09 stp: BPDU Guard violation on Ethernet1/18; interface placed in err-disabled state"}}],
+      "expected": {"category": "network", "fact_types_contains": ["stp_protection"], "matched_rules_contains": ["network_layer2"], "requires_onsite": false, "cc_decision": "not_required", "candidate_contains": "二层"}
+    },
+    {
+      "id": "NET-010",
+      "domain": "network_layer2",
+      "title": "MAC地址在两个端口间漂移",
+      "origin": "network_syslog",
+      "inputs": [{"source": "log", "payload": {"site": "NORMAL-DEMO", "sn": "SIM-SW-010", "rack_position": "NORM-NET-10", "device_name": "normal-tor-10", "device_type": "switch", "summary": "MAC地址频繁漂移", "log_text": "[SIMULATED] normal-tor-10 l2: MAC 02:00:00:aa:bb:10 flapping between Ethernet1/20 and Ethernet1/21 in VLAN 220"}}],
+      "expected": {"category": "network", "fact_types_contains": ["mac_flap"], "matched_rules_contains": ["network_layer2"], "requires_onsite": false, "cc_decision": "not_required", "candidate_contains": "环路"}
+    },
+    {
+      "id": "NET-011",
+      "domain": "network_redundancy",
+      "title": "MLAG对等链路丢失",
+      "origin": "network_syslog",
+      "inputs": [{"source": "log", "payload": {"site": "NORMAL-DEMO", "sn": "SIM-SW-011", "rack_position": "NORM-NET-11", "device_name": "normal-tor-11", "device_type": "switch", "summary": "双机对等状态异常", "log_text": "[SIMULATED] normal-tor-11 mlag: peer-link down; peer unreachable; dual-active protection engaged"}}],
+      "expected": {"category": "network", "fact_types_contains": ["mlag_peer_down", "redundancy_degraded"], "matched_rules_contains": ["network_redundancy"], "requires_onsite": false, "cc_decision": "not_required", "candidate_contains": "MLAG"}
+    },
+    {
+      "id": "NET-012",
+      "domain": "network_hardware",
+      "title": "交换机单电源模块故障",
+      "origin": "network_syslog",
+      "inputs": [{"source": "log", "payload": {"site": "NORMAL-DEMO", "sn": "SIM-SW-012", "rack_position": "NORM-NET-12", "device_name": "normal-tor-12", "device_type": "switch", "summary": "交换机电源冗余降低", "log_text": "[SIMULATED] normal-tor-12 platform: power supply PSU2 failed; redundancy changed 2+0 -> 1+0; chassis remains operational"}}],
+      "expected": {"category": "facility", "fact_types_contains": ["power_supply", "redundancy_degraded"], "matched_rules_contains": ["facility_power"], "requires_onsite": true, "cc_decision": "not_required", "candidate_contains": "电源"}
+    },
+    {
+      "id": "NET-013",
+      "domain": "network_common_incident",
+      "title": "核心交换机宕机导致多个下联不可达",
+      "origin": "nms_webhook_and_syslog",
+      "inputs": [
+        {"source": "monitor", "payload": {"site": "CORE-DEMO", "sn": "SIM-CORE-SW-013", "rack_position": "CORE-NET-01", "device_name": "core-switch-01", "device_type": "switch", "summary": "核心交换机不可达且大量下联中断", "message": "[SIMULATED] NMS: core switch unreachable; 48 downstream links down", "incident_key": "SIM-CORE-NET-013", "facility_criticality": "core", "asset_criticality": "core", "event_subtype": "core_switch_outage", "impact_level": "widespread_outage"}},
+        {"source": "monitor", "payload": {"site": "CORE-DEMO", "sn": "SIM-DOWNSTREAM-013-A", "rack_position": "CORE-A-13-01", "device_type": "server", "summary": "下联服务器网络不可达", "message": "[SIMULATED] probe: host network unreachable after upstream device loss", "incident_key": "SIM-CORE-NET-013", "facility_criticality": "core", "impact_level": "widespread_outage"}},
+        {"source": "monitor", "payload": {"site": "CORE-DEMO", "sn": "SIM-DOWNSTREAM-013-B", "rack_position": "CORE-A-13-02", "device_type": "server", "summary": "下联服务器网络不可达", "message": "[SIMULATED] probe: host network unreachable after upstream device loss", "incident_key": "SIM-CORE-NET-013", "facility_criticality": "core", "impact_level": "widespread_outage"}}
+      ],
+      "expected": {"category": "network", "fact_types_contains": ["core_switch_outage", "multi_device_network"], "matched_rules_contains": ["network_core_outage"], "requires_onsite": true, "cc_decision": "required", "cc_required": true, "incident_count": 1, "input_count": 3, "affected_count": 3}
+    },
+    {
+      "id": "FAC-001",
+      "domain": "facility_power",
+      "title": "核心机房单路掉电",
+      "origin": "dcim_webhook",
+      "inputs": [{"source": "monitor", "payload": {"site": "CORE-DEMO", "device_type": "facility", "summary": "核心机房A路供电中断", "message": "[SIMULATED] DCIM: utility feed A lost; feed B carrying load; IT devices remain online", "facility_criticality": "core", "event_subtype": "single_feed_loss", "impact_level": "redundancy_degraded", "incident_key": "SIM-FAC-POWER-001"}}],
+      "expected": {"category": "facility", "fact_types_contains": ["single_feed_loss", "redundancy_degraded"], "matched_rules_contains": ["facility_power"], "requires_onsite": true, "cc_decision": "required", "cc_required": true}
+    },
+    {
+      "id": "FAC-002",
+      "domain": "facility_power",
+      "title": "核心机房双路掉电",
+      "origin": "dcim_webhook",
+      "inputs": [{"source": "monitor", "payload": {"site": "CORE-DEMO", "device_type": "facility", "summary": "核心机房双路供电中断", "message": "[SIMULATED] DCIM: feed A lost; feed B lost; multiple racks without input power", "facility_criticality": "core", "event_subtype": "dual_feed_loss", "impact_level": "widespread_outage", "incident_key": "SIM-FAC-POWER-002"}}],
+      "expected": {"category": "facility", "fact_types_contains": ["dual_feed_loss"], "matched_rules_contains": ["facility_power"], "requires_onsite": true, "cc_decision": "required", "cc_required": true}
+    },
+    {
+      "id": "FAC-003",
+      "domain": "facility_power",
+      "title": "普通机房单路掉电但设备在线",
+      "origin": "dcim_webhook",
+      "inputs": [{"source": "monitor", "payload": {"site": "NORMAL-DEMO", "device_type": "facility", "summary": "普通机房单路供电中断", "message": "[SIMULATED] DCIM: feed A lost; feed B healthy; no device outage detected", "facility_criticality": "normal", "event_subtype": "single_feed_loss", "impact_level": "redundancy_degraded"}}],
+      "expected": {"category": "facility", "fact_types_contains": ["single_feed_loss", "redundancy_degraded"], "matched_rules_contains": ["facility_power"], "requires_onsite": true, "cc_decision": "not_required", "cc_required": false}
+    },
+    {
+      "id": "FAC-004",
+      "domain": "facility_water",
+      "title": "普通机房漏水但未影响设备",
+      "origin": "leak_sensor_and_onsite",
+      "inputs": [{"source": "onsite", "payload": {"site": "NORMAL-DEMO", "device_type": "facility", "summary": "机房墙边发现少量渗水", "observation": "[SIMULATED] 漏水点距离最近机柜约5米，尚未接触线缆和设备，没有机器宕机", "facility_criticality": "normal", "event_subtype": "water_leak", "impact_level": "alarm_only"}}],
+      "expected": {"category": "facility", "fact_types_contains": ["water_leak", "no_device_impact"], "matched_rules_contains": ["facility_water"], "requires_onsite": true, "cc_decision": "not_required", "cc_required": false}
+    },
+    {
+      "id": "FAC-005",
+      "domain": "facility_water",
+      "title": "漏水导致核心交换机故障",
+      "origin": "dcim_nms_and_onsite",
+      "inputs": [
+        {"source": "monitor", "payload": {"site": "CORE-DEMO", "sn": "SIM-CORE-SW-WATER-005", "rack_position": "CORE-NET-05", "device_name": "core-switch-water-05", "device_type": "switch", "summary": "漏水区域核心交换机宕机", "message": "[SIMULATED] leak alarm active near CORE-NET-05; core switch unreachable; downstream links down", "facility_criticality": "core", "asset_criticality": "core", "event_subtype": "water_caused_core_device_failure", "impact_level": "widespread_outage", "incident_key": "SIM-FAC-WATER-005"}},
+        {"source": "onsite", "payload": {"site": "CORE-DEMO", "sn": "SIM-CORE-SW-WATER-005", "rack_position": "CORE-NET-05", "device_name": "core-switch-water-05", "device_type": "switch", "summary": "现场确认设备附近进水且交换机已离线", "observation": "[SIMULATED] 机柜顶部可见进水痕迹，核心交换机电源灯灭，禁止现场自行上电", "facility_criticality": "core", "asset_criticality": "core", "event_subtype": "water_caused_core_device_failure", "impact_level": "widespread_outage", "incident_key": "SIM-FAC-WATER-005", "power_permission": "forbidden"}}
+      ],
+      "expected": {"category": "facility", "fact_types_contains": ["water_leak", "core_device_failure"], "matched_rules_contains": ["facility_water"], "requires_onsite": true, "cc_decision": "required", "cc_required": true, "incident_count": 1, "input_count": 2}
+    },
+    {
+      "id": "FAC-006",
+      "domain": "facility_temperature",
+      "title": "温度升高但没有达到CC条件",
+      "origin": "dcim_webhook",
+      "inputs": [{"source": "monitor", "payload": {"site": "NORMAL-DEMO", "device_type": "facility", "summary": "冷通道温度持续升高", "message": "[SIMULATED] temperature rising from 23.5C to 29.8C; no device outage; SOP threshold not confirmed", "facility_criticality": "normal", "event_subtype": "temperature_rising", "impact_level": "alarm_only"}}],
+      "expected": {"category": "facility", "fact_types_contains": ["temperature", "no_device_impact"], "matched_rules_contains": ["facility_temperature"], "requires_onsite": true, "cc_decision": "not_required", "cc_required": false}
+    },
+    {
+      "id": "FAC-007",
+      "domain": "facility_power",
+      "title": "机房等级未知时双路掉电等待确认",
+      "origin": "dcim_webhook",
+      "inputs": [{"source": "monitor", "payload": {"site": "UNKNOWN-DEMO", "device_type": "facility", "summary": "双路供电中断", "message": "[SIMULATED] DCIM: feed A lost; feed B lost; room criticality unavailable", "facility_criticality": "unknown", "event_subtype": "dual_feed_loss", "impact_level": "widespread_outage"}}],
+      "expected": {"category": "facility", "fact_types_contains": ["dual_feed_loss"], "matched_rules_contains": ["facility_power"], "matched_rules_excludes": ["system_memory_pressure"], "requires_onsite": true, "cc_decision": "needs_confirmation", "cc_required": false}
+    },
+    {
+      "id": "FAC-008",
+      "domain": "facility_fire",
+      "title": "烟雾告警等待SOP确认",
+      "origin": "environment_sensor",
+      "inputs": [{"source": "monitor", "payload": {"site": "NORMAL-DEMO", "device_type": "facility", "summary": "机柜上方烟雾传感器告警", "message": "[SIMULATED] smoke detector zone Z-12 active; no fire confirmation; suppression not discharged", "facility_criticality": "normal", "event_subtype": "smoke_alarm", "impact_level": "alarm_only"}}],
+      "expected": {"category": "facility", "fact_types_contains": ["smoke_alarm"], "matched_rules_contains": ["facility_fire"], "requires_onsite": true, "cc_decision": "needs_confirmation", "cc_required": false}
+    }
+  ]
+}

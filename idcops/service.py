@@ -8,6 +8,7 @@ import uuid
 from typing import Any, Dict, Iterable, List, Mapping, Optional
 
 from .ai import AIEnricher
+from .facility import assess_facility_event, strongest_assessment
 from .investigation import apply_model_enrichment, build_investigation, merge_investigations
 from .integrations import IntegrationHub
 from .knowledge import KnowledgeBase
@@ -76,6 +77,19 @@ def normalize_input(source: str, payload: Mapping[str, Any]) -> NormalizedInput:
         labels["source_system"] = payload["source_system"]
     if "external_query" in payload:
         labels["external_query"] = payload["external_query"]
+    for field in (
+        "facility_criticality",
+        "facility_criticality_source",
+        "facility_name",
+        "asset_criticality",
+        "event_category",
+        "event_subtype",
+        "impact_level",
+        "sop_threshold_met",
+        "affected_scope",
+    ):
+        if field in payload:
+            labels[field] = payload[field]
 
     if source == "monitor":
         summary = _coalesce(payload.get("summary"), payload.get("title"), payload.get("message"))
@@ -120,6 +134,14 @@ class IncidentService:
     def ingest(self, source: str, payload: Mapping[str, Any]) -> Dict[str, Any]:
         event = normalize_input(source, payload)
         analysis = analyze_rules(event)
+        facility_assessment = assess_facility_event(
+            event,
+            analysis,
+            self.store.get_facility_profile(event.site) if event.site else None,
+        )
+        if facility_assessment["decision"] == "required":
+            analysis.cc_required = True
+            analysis.cc_reason = facility_assessment["reason"]
         correlation_key = self._correlation_key(event, analysis.category)
         investigation = build_investigation(
             event,
@@ -130,6 +152,7 @@ class IncidentService:
         )
         enriched = self.ai.enrich(event, analysis, investigation)
         analysis_dict = self._combine_analysis(analysis, enriched)
+        analysis_dict["facility_assessment"] = facility_assessment
         if enriched:
             investigation = apply_model_enrichment(investigation, enriched)
         existing = self.store.find_merge_candidate(event, analysis.category, correlation_key)
@@ -340,6 +363,10 @@ class IncidentService:
             key=lambda item: SEVERITY_RANK.get(item, 0),
         )
         analysis_dict["evidence"] = evidence
+        analysis_dict["facility_assessment"] = strongest_assessment(
+            existing.get("analysis", {}).get("facility_assessment"),
+            analysis_dict.get("facility_assessment", {}),
+        )
         onsite_card = self._onsite_card(event, analysis)
         if not analysis.requires_onsite and existing.get("onsite_card", {}).get("required"):
             onsite_card = dict(existing["onsite_card"])
@@ -366,6 +393,27 @@ class IncidentService:
 
     def update_status(self, incident_id: str, status: str) -> Optional[Dict[str, Any]]:
         return self.store.update_status(incident_id, status)
+
+    def list_facility_profiles(self) -> List[Dict[str, Any]]:
+        return self.store.list_facility_profiles()
+
+    def upsert_facility_profile(self, payload: Mapping[str, Any]) -> Dict[str, Any]:
+        site = str(payload.get("site") or "").strip().upper()
+        if not site:
+            raise ValueError("机房编码不能为空")
+        criticality = str(payload.get("criticality") or "unknown").strip().lower()
+        if criticality not in {"core", "normal", "unknown"}:
+            raise ValueError("机房等级必须是 core、normal 或 unknown")
+        return self.store.upsert_facility_profile(
+            {
+                "site": site,
+                "display_name": str(payload.get("display_name") or site).strip(),
+                "criticality": criticality,
+                "source": str(payload.get("source") or "local_config").strip(),
+                "source_reference": str(payload.get("source_reference") or "").strip(),
+                "effective_at": str(payload.get("effective_at") or utc_now()).strip(),
+            }
+        )
 
     def source_statuses(self, check_external: bool = True) -> List[Dict[str, Any]]:
         return self.integrations.source_statuses(check_external=check_external)

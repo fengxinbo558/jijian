@@ -40,6 +40,7 @@ FACT_PATTERNS: Sequence[FactPattern] = (
     FactPattern("nvme_health", "NVMe 健康异常", _compile(r"NVMe.{0,30}(?:error|critical)|media_errors|critical_warning")),
     FactPattern("filesystem_read_only", "文件系统只读", _compile(r"read-only file system|remounting filesystem read-only")),
     FactPattern("space_exhausted", "存储空间耗尽", _compile(r"No space left on device")),
+    FactPattern("inode_exhausted", "文件系统 inode 耗尽", _compile(r"filesystem_files_free[^\n]{0,40}=0|free inodes?[^\n]{0,20}=0|inode.{0,20}(?:exhausted|used\s*100%)")),
     FactPattern("raid_degraded", "RAID 降级", _compile(r"RAID.{0,20}degraded|degraded array|member disk failed")),
     FactPattern("storage_timeout", "存储命令超时或复位", _compile(r"command timeout|resetting link|controller reset")),
     FactPattern("memory_ue", "内存不可纠正错误", _compile(r"uncorrected memory error|uncorrectable.{0,12}(?:ECC|memory)|EDAC\s+.*\bUE\b")),
@@ -47,25 +48,45 @@ FACT_PATTERNS: Sequence[FactPattern] = (
     FactPattern("machine_check", "Machine Check 事件", _compile(r"Machine Check|\bMCE\b")),
     FactPattern("memory_locator", "内存逻辑位置", _compile(r"(?:socket|channel|dimm)\s*[=:]\s*[a-z0-9_-]+")),
     FactPattern("pcie_aer", "PCIe AER 错误", _compile(r"AER:|PCIe Bus Error")),
+    FactPattern("nic_reset", "网卡或适配器超时复位", _compile(r"transmit queue timed out|resetting adapter|adapter reset|firmware reset")),
     FactPattern("oom_kill", "OOM 终止进程", _compile(r"Out of memory|oom-killer|Killed process|memory pressure")),
     FactPattern("link_flap", "链路反复变化", _compile(r"link flap|flapping")),
     FactPattern("link_down", "接口运行状态下降", _compile(r"link (?:is )?down|interface.{0,20}down|carrier lost|ifOperStatus.{0,8}down")),
-    FactPattern("network_interface", "网络接口对象", _compile(r"\b((?:Hundred|Forty|Ten)?Gig(?:abit)?Ethernet?[0-9/.-]+|eth\d+|ens\d+|eno\d+|bond\d+)\b"), 1),
+    FactPattern("network_interface", "网络接口对象", _compile(r"\b((?:(?:Hundred|Forty|Ten)?Gig(?:abit)?Ethernet|Ethernet)[0-9/.-]+|eth\d+|ens\d+|eno\d+|bond\d+)\b"), 1),
     FactPattern("optical_power", "光功率读数或告警", _compile(r"(?:Rx|Tx)\s*Power|optical power|光功率")),
     FactPattern("crc_error", "接口 CRC 或输入错误", _compile(r"CRC errors?|input errors?")),
     FactPattern("bond_member_down", "Bond 成员异常", _compile(r"bond.{0,20}(?:slave|member).{0,12}down|active slave changed")),
+    FactPattern("lacp_member_down", "LACP或聚合成员异常", _compile(r"LACP.{0,30}(?:member|port).{0,20}(?:down|removed|inactive)|Port-Channel.{0,20}(?:degraded|member)")),
+    FactPattern("mlag_peer_down", "MLAG/vPC对等异常", _compile(r"MLAG.{0,30}(?:peer-link down|peer unreachable|dual-active)|vPC.{0,20}(?:peer.*down|split)")),
+    FactPattern("redundancy_degraded", "冗余能力降低", _compile(r"redundancy.{0,20}(?:lost|changed|degraded)|remains up with 1 of 2|bundle remains up|feed B (?:carrying|healthy)|dual-active protection|冗余.{0,12}(?:降低|丢失)")),
+    FactPattern("bgp_neighbor_down", "BGP邻居会话下降", _compile(r"BGP.{0,60}(?:Established\s*->\s*(?:Idle|Active|Down)|neighbor.{0,20}(?:down|idle)|hold timer expired)")),
+    FactPattern("ospf_neighbor_down", "OSPF邻接关系下降", _compile(r"OSPF.{0,140}(?:Full\s*->\s*Down|neighbor.{0,40}down|dead timer expired)")),
+    FactPattern("stp_protection", "STP或BPDU保护触发", _compile(r"BPDU Guard|err-disabled|STP.{0,30}(?:topology|inconsistent|blocked)")),
+    FactPattern("mac_flap", "MAC地址漂移", _compile(r"MAC.{0,30}(?:flap|flapping|move).{0,50}(?:port|Ethernet|VLAN)")),
+    FactPattern("core_switch_outage", "核心交换机宕机或不可达", _compile(r"核心交换机.{0,24}(?:宕机|故障|离线|不可达)|core\s+switch.{0,24}(?:down|unreachable|offline|failed)")),
+    FactPattern("multi_device_network", "多个下联对象同时网络异常", _compile(r"(?:\d+|大量|多台|多个|multiple).{0,20}(?:downstream|下联|devices?).{0,24}(?:down|中断|不可达|unreachable)")),
     FactPattern("temperature", "温度读数或高温信号", _compile(r"(?:temperature|温度)[^\n]{0,20}?(-?\d+(?:\.\d+)?)\s*(?:°?C|℃)?"), 1, "°C"),
     FactPattern("fan_anomaly", "风扇异常", _compile(r"fan.{0,20}(?:full|high|fail|critical)|风扇.{0,12}(?:满转|高速|故障|异常)")),
     FactPattern("cooling_alarm", "制冷或空调告警", _compile(r"cooling.{0,20}(?:failure|alarm)|空调.{0,12}(?:故障|停机|异常)|制冷.{0,12}异常")),
     FactPattern("power_supply", "电源模块告警", _compile(r"power supply.{0,20}(?:fail|lost)|PSU.{0,16}(?:fail|lost)|redundancy lost")),
+    FactPattern("single_feed_loss", "单路供电中断", _compile(r"单路.{0,10}(?:掉电|断电|中断)|(?:utility\s+)?feed\s*[AB]\s*lost")),
+    FactPattern("dual_feed_loss", "双路供电中断", _compile(r"双路.{0,10}(?:掉电|断电|中断)|feed\s*A\s*lost.{0,50}feed\s*B\s*lost")),
+    FactPattern("water_leak", "机房漏水或设备进水", _compile(r"漏水|渗水|进水|积水|water\s+leak|leak\s+alarm")),
+    FactPattern("no_device_impact", "当前未发现设备影响", _compile(r"no device outage|no device impact|没有机器宕机|尚未.{0,12}(?:影响|接触).{0,12}(?:设备|线缆)|未影响线上设备")),
+    FactPattern("core_device_failure", "核心设备发生故障", _compile(r"(?:核心交换机|核心设备|core\s+switch|core\s+device).{0,30}(?:宕机|故障|离线|不可达|down|failed|unreachable)")),
+    FactPattern("smoke_alarm", "烟雾或消防告警", _compile(r"烟雾|火灾|smoke\s+detector|fire\s+alarm|fire suppression")),
     FactPattern("time_discontinuity", "时间不连续", _compile(r"clock changed|timestamp jump|NTP.{0,16}(?:step|adjust)")),
-    FactPattern("service_failed", "服务启动失败", _compile(r"Failed to start|Active:\s*failed|service failed|Result:\s*exit-code")),
+    FactPattern("time_sync_failure", "系统时间同步失败", _compile(r"No selectable sources|NTP synchronization lost|System clock wrong|time sync.{0,16}(?:failed|lost)")),
+    FactPattern("service_failed", "服务启动失败", _compile(r"Failed to start|Active:\s*failed|service failed|Result:\s*exit-code|Main process exited")),
     FactPattern("boot_failure", "系统启动失败", _compile(r"boot failed|emergency mode|无法启动")),
     FactPattern("kernel_panic", "Kernel panic", _compile(r"Kernel panic|panic - not syncing")),
+    FactPattern("kernel_watchdog", "内核锁死或watchdog重启", _compile(r"soft lockup|hard lockup|watchdog.{0,30}(?:lockup|restart|reset)|emergency restart")),
     FactPattern("mount_failure", "挂载失败", _compile(r"Failed to mount|mount unit.{0,20}failed")),
     FactPattern("port_conflict", "监听端口冲突", _compile(r"(?:Address already in use|port.{0,12}already in use|端口.{0,8}占用)(?:[^\n]{0,40}?([0-9]{2,5}))?"), 1),
     FactPattern("process_crash", "进程崩溃", _compile(r"segfault|core dumped|signal 11")),
     FactPattern("dependency_connection", "依赖连接失败", _compile(r"Connection refused|connection timed out|dependency unavailable")),
+    FactPattern("dns_failure", "DNS名称解析失败", _compile(r"Temporary failure in name resolution|DNS (?:lookup|resolution).{0,16}(?:failed|failure)|lookup .{0,80}(?:no such host|failed)")),
+    FactPattern("tls_certificate_expired", "TLS证书过期", _compile(r"certificate has expired|x509:.{0,30}expired|TLS handshake.{0,24}failed.{0,40}certificate")),
     FactPattern("lock_contention", "锁竞争或死锁", _compile(r"deadlock|lock timeout|could not acquire lock")),
     FactPattern("restart_loop", "服务反复重启", _compile(r"Start request repeated too quickly|restart counter|crash loop")),
 )
@@ -73,11 +94,22 @@ FACT_PATTERNS: Sequence[FactPattern] = (
 
 RULE_LIMITATIONS = {
     "facility_temperature": "温度或风扇信号只能说明环境/散热方向，不能单独确认空调故障或触发 CC。",
+    "facility_power": "供电告警需要结合供电拓扑、冗余状态和机房等级，单个PSU失败不等于机房掉电。",
+    "facility_water": "漏水信号需要确认位置、范围和设备影响，不能只凭漏水关键词触发CC。",
+    "facility_fire": "烟雾与消防事件优先遵守人身安全和既有SOP，AI不替代现场确认。",
     "disk_io": "存储关键词只能确认存在存储路径异常信号，不能单独确认具体物理盘损坏。",
     "memory_machine_check": "ECC/MCE 需要解码与物理映射，不能直接等同于某根内存条故障。",
     "system_memory_pressure": "OOM 描述资源耗尽，不支持直接判断物理内存硬件故障。",
+    "hardware_bus": "PCIe AER和适配器复位需要映射BDF、驱动和上游端口，不能单独确认插卡或主板损坏。",
+    "system_stability": "watchdog或lockup只能确认系统失去响应，不能单独确认软件或硬件根因。",
+    "system_time": "时间同步失败会破坏跨来源排序，校正前不能确认因果先后。",
+    "network_core_outage": "核心设备不可达需要排除管理面和监控路径问题，并核对真实下联影响。",
+    "network_redundancy": "单成员或对等链路异常需要确认剩余冗余和业务影响，不能直接等同于整体中断。",
+    "network_control_plane": "协议邻居down需要结合对端、链路、计时器和路由绕行状态。",
+    "network_layer2": "STP或MAC漂移只给出二层调查方向，不直接授权恢复端口或拔线。",
     "network_link": "单端 link down 或光功率信息不能单独区分本端、链路和对端。",
     "application_runtime": "运行时错误需要结合进程、依赖和变更，不能推断客户源代码原因。",
+    "application_dependency": "DNS、连接或TLS失败需要分层验证，不能把依赖失败直接等同于网络硬件故障。",
 }
 
 
@@ -319,7 +351,7 @@ def _hypotheses(
                     "basis": "由已提取事实召回知识卡后形成，尚未执行验证工具",
                 }
             )
-            if len(result) >= 8:
+            if len(result) >= 12:
                 return result
     if not result:
         for cause in fallback_causes[:4]:

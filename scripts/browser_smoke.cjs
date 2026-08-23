@@ -13,6 +13,7 @@ fs.mkdirSync(reports, { recursive: true });
 (async () => {
   const consoleErrors = [];
   const browserSn = `BROWSER-FULL-SN-${Date.now()}`;
+  const facilityCode = `UIT${String(Date.now()).slice(-7)}`;
   const browser = await chromium.launch({ headless: true });
   try {
     const page = await browser.newPage({ viewport: { width: 1500, height: 980 } });
@@ -24,12 +25,13 @@ fs.mkdirSync(reports, { recursive: true });
 
     await page.getByRole("button", { name: "查看模拟案例" }).first().click();
     await page.getByRole("button", { name: "运行这个场景" }).first().click();
-    await page.locator(".incident-row").first().waitFor();
+    await page.locator(".incident-heading .incident-summary").getByText("冷通道温度持续升高，服务器风扇进入高速", { exact: true }).waitFor();
     await page.locator(".cc-alert").waitFor();
     if (!(await page.locator(".cc-alert").innerText()).includes("请立即按现有 CC 流程拨打电话")) throw new Error("CC boundary missing");
     if (!(await page.locator(".identity-strip").innerText()).includes("G3M02179543")) throw new Error("full SN missing");
     if (!(await page.locator(".capability-banner").innerText()).includes("规则＋知识")) throw new Error("analysis mode missing");
     if (!(await page.locator(".capability-banner .simulation-badge").innerText()).includes("模拟数据")) throw new Error("simulation badge missing");
+    if (!(await page.locator(".facility-assessment").innerText()).includes("为什么这样判断")) throw new Error("facility decision explanation missing");
     if (!(await page.locator(".signal-route").innerText()).includes("模拟数据不会查询真实设备")) throw new Error("data route disclosure missing");
     if ((await page.locator(".evidence-node").count()) < 7) throw new Error("trace nodes missing");
     if (!(await page.locator(".correlation-panel").textContent()).includes("外部输入提供了相同 incident_key")) throw new Error("correlation reason missing");
@@ -39,9 +41,34 @@ fs.mkdirSync(reports, { recursive: true });
     await page.getByRole("button", { name: "数据从哪来" }).first().click();
     await page.locator("#sourceGrid .source-card").first().waitFor();
     if (!(await page.locator("#sourceGrid").innerText()).includes("SigNoz 监控底座")) throw new Error("SigNoz source missing");
+    if (!(await page.locator("#sourceGrid").innerText()).includes("网络 syslog 与 NMS")) throw new Error("network log source missing");
     if (!(await page.locator("#sourceGrid").innerText()).includes("尚未连接")) throw new Error("honest unconfigured state missing");
     await page.screenshot({ path: path.join(reports, "browser-sources.png"), fullPage: false });
     await page.locator("#sourceDialog [data-close-dialog]").click();
+
+    await page.getByRole("button", { name: "机房等级" }).click();
+    await page.locator("#facilityForm input[name='site']").fill(facilityCode);
+    await page.locator("#facilityForm input[name='display_name']").fill("浏览器测试核心机房");
+    await page.locator("#facilityForm select[name='criticality']").selectOption("core");
+    await page.locator("#facilityForm").getByRole("button", { name: "保存标注" }).click();
+    await page.getByRole("heading", { name: facilityCode }).waitFor();
+    if (!(await page.locator("#facilityGrid").innerText()).includes("核心机房")) throw new Error("facility profile not saved");
+    await page.locator("#facilityDialog [data-close-dialog]").click();
+
+    await page.getByRole("button", { name: "查看模拟案例" }).first().click();
+    await page.locator(".demo-card", { hasText: "核心机房单路掉电" }).getByRole("button", { name: "运行这个场景" }).click();
+    await page.locator(".incident-heading .incident-summary").getByText("核心机房A路供电中断", { exact: true }).waitFor();
+    await page.locator('.facility-assessment[data-decision="required"]').waitFor();
+    const coreAssessment = await page.locator(".facility-assessment").innerText();
+    if (!coreAssessment.includes("核心机房") || !coreAssessment.includes("需要CC") || !coreAssessment.includes("CC-CORE-SINGLE-FEED")) throw new Error("core facility CC matrix incorrect");
+
+    await page.getByRole("button", { name: "查看模拟案例" }).first().click();
+    await page.locator(".demo-card", { hasText: "普通机房单路掉电" }).getByRole("button", { name: "运行这个场景" }).click();
+    await page.locator(".incident-heading .incident-summary").getByText("普通机房A路供电中断", { exact: true }).waitFor();
+    await page.locator('.facility-assessment[data-decision="not_required"]').waitFor();
+    const normalAssessment = await page.locator(".facility-assessment").innerText();
+    if (!normalAssessment.includes("普通机房") || !normalAssessment.includes("普通处理")) throw new Error("ordinary facility decision incorrect");
+    await page.screenshot({ path: path.join(reports, "browser-facility-assessment.png"), fullPage: true });
 
     await page.getByRole("button", { name: "分析真实故障" }).first().click();
     await page.locator("#logForm input[name='sn']").fill(browserSn);
@@ -63,12 +90,13 @@ fs.mkdirSync(reports, { recursive: true });
     await mobile.goto(baseUrl, { waitUntil: "networkidle" });
     await mobile.locator(".incident-row").first().waitFor();
     await mobile.locator(".capability-banner").waitFor();
+    await mobile.locator(".facility-assessment").waitFor();
     if ((await mobile.locator(".evidence-node").count()) < 7) throw new Error("mobile trace missing");
     await mobile.screenshot({ path: path.join(reports, "browser-mobile.png"), fullPage: true });
     await mobile.close();
 
     if (consoleErrors.length) throw new Error(`Browser console errors: ${consoleErrors.join(" | ")}`);
-    process.stdout.write("Browser flow passed: plain-language entry, source state, data route, trace, CC boundary, real incident, full SN, status, mobile\n");
+    process.stdout.write("Browser flow passed: source state, facility profiles, three-state CC matrix, data route, trace, real incident, full SN, status, mobile\n");
   } finally {
     await browser.close();
   }

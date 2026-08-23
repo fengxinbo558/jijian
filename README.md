@@ -25,8 +25,10 @@ python3 run.py
 - 规则优先、可选模型增强的故障分类与证据整理
 - 同一事故的多条输入、多台设备关联
 - 现场处置卡与操作安全门
-- 高温、磁盘、内存、网络四个内置回放场景
-- CC 仅在输入明确确认时显示一次电话提醒，不进入后续流程
+- Linux、应用、网络与机房设施共 13 个页面回放场景
+- 核心/普通/未确认三种机房等级，以及供电、漏水、核心网络、温度和烟雾三态 CC 判断
+- CC 只在确定性规则或人工明确确认时显示一次电话提醒，不接管后续电话流程
+- 36 组完整合成日志、259 个自动检查点，覆盖系统、应用、网络和设施故障
 
 ## 复合底座
 
@@ -46,6 +48,8 @@ python3 run.py
 3. 外部监控平台主动调用通用 Webhook。
 4. 配置后由机鉴按设备身份和事故时间窗查询 SigNoz。
 5. 配置后由 HolmesGPT 调用获准的只读工具补充调查。
+
+部署模板分别位于 `deploy/otel/linux-agent.yaml`（Linux journald 与主机指标）和 `deploy/otel/network-syslog.yaml`（受控网络中的交换机 syslog）。模板不会自动运行，也不会绕过客户授权。
 
 内置案例由程序生成模拟输入，页面会始终显示“模拟数据”。机鉴不会自动登录 Linux、扫描未知目录或越权查询 BMC、OMS 和交换机；“数据来源”页面会如实显示哪些来源可用、未配置、失败或仍需客户接口。
 
@@ -67,7 +71,7 @@ python3 run.py
 
 ## 诊断知识库
 
-`knowledge/diagnostic_cards.json` 内置 40 张带来源和版本的知识卡，覆盖存储、内存/CPU、网络、动环、Linux 系统和应用六个领域。每张卡包含：
+`knowledge/diagnostic_cards.json` 内置 48 张带来源和版本的知识卡，覆盖存储、内存/CPU、网络、动环、Linux 系统和应用六个领域。每张卡包含：
 
 - 可观察症状和支持信号；
 - 竞争原因和会削弱判断的情况；
@@ -121,11 +125,14 @@ python3 run.py
 ```bash
 python3 -m unittest discover -s tests -v
 python3 evals/run_evaluation.py
+python3 evals/run_synthetic_logs.py
 ```
 
 - 人可读测试题：`docs/testing/2026-08-23-first-evaluation-questions.md`
 - 机器测试集：`evals/test_cases.json`
 - 最近自测报告：`reports/evaluation-report.md`
+- 网络、系统与设施模拟日志：`evals/synthetic_log_cases.json`
+- 36 场景逐项结果：`reports/synthetic-log-report.md`
 
 测试报告明确区分规则＋知识基线和 AI 增强。没有配置真实模型时，不会伪造 AI 对照结果；模拟题通过只代表调查结构和安全边界符合预期，不代表生产故障定位准确率。
 

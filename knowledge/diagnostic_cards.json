@@ -57,6 +57,27 @@
       "accessed_at": "2026-08-23",
       "type": "standard"
     },
+    "rfc4271": {
+      "title": "RFC 4271 Border Gateway Protocol 4",
+      "url": "https://www.rfc-editor.org/info/rfc4271/",
+      "version": "RFC 4271",
+      "accessed_at": "2026-08-24",
+      "type": "standard"
+    },
+    "rfc2328": {
+      "title": "RFC 2328 OSPF Version 2",
+      "url": "https://www.rfc-editor.org/info/rfc2328/",
+      "version": "RFC 2328",
+      "accessed_at": "2026-08-24",
+      "type": "standard"
+    },
+    "linux_bonding": {
+      "title": "Linux Ethernet Bonding Driver HOWTO",
+      "url": "https://docs.kernel.org/networking/bonding.html",
+      "version": "current",
+      "accessed_at": "2026-08-24",
+      "type": "official"
+    },
     "otel_logs": {
       "title": "OpenTelemetry general logs semantic conventions",
       "url": "https://opentelemetry.io/docs/specs/semconv/general/logs/",
@@ -257,7 +278,7 @@
       "id": "NETWORK-LINK-016", "version": "1.0.0", "status": "reviewed", "domain": "network",
       "title": "接口运行状态下降调查", "applies_to": ["linux", "server", "switch", "network"],
       "symptoms": ["接口运行状态进入 down"], "supporting_signals": ["link down", "ifOperStatus down"],
-      "competing_causes": ["物理链路中断", "对端关闭或故障", "本端管理关闭"],
+      "competing_causes": ["线缆/光纤物理链路中断", "对端关闭或故障", "本端管理关闭"],
       "counter_signals": ["ifAdminStatus down 时不能优先判断物理故障"], "required_context": ["ifAdminStatus", "ifOperStatus", "本端与对端接口"],
       "verification_steps": ["比较管理状态与运行状态", "查询对端同时间接口事件"],
       "branch_conditions": ["管理 up 但运行 down 时提升物理链路候选"], "stop_conditions": ["未核对完整端口和对端前不得拔线"],
@@ -281,7 +302,7 @@
       "id": "NETWORK-OPTIC-018", "version": "1.0.0", "status": "reviewed", "domain": "network",
       "title": "光功率异常调查", "applies_to": ["switch", "network", "optical"],
       "symptoms": ["接收或发送光功率不在接口人给定范围"], "supporting_signals": ["Rx Power", "Tx Power", "optical power low"],
-      "competing_causes": ["本端模块异常", "光纤链路损耗或污染", "对端模块异常"],
+      "competing_causes": ["本端模块异常", "线缆/光纤链路损耗或污染", "对端模块异常"],
       "counter_signals": ["阈值随模块型号和链路设计变化"], "required_context": ["模块型号", "接口人确认的正常范围", "本端与对端实测值"],
       "verification_steps": ["记录本端 Rx/Tx 与阈值", "按路径获取对端对应值并保持端口映射"],
       "branch_conditions": ["一端 Tx 正常而另一端 Rx 低时提升中间链路候选"], "stop_conditions": ["未核对端口和对端前不得拔纤"],
@@ -341,7 +362,7 @@
       "id": "NETWORK-BOND-023", "version": "1.0.0", "status": "reviewed", "domain": "network",
       "title": "Bond 成员链路异常调查", "applies_to": ["linux", "server", "network"],
       "symptoms": ["bond 成员 down 或发生主备切换"], "supporting_signals": ["bond slave down", "active slave changed"],
-      "competing_causes": ["单成员物理链路异常", "对端聚合配置不一致", "预期的主备切换"],
+      "competing_causes": ["单个成员链路异常", "对端聚合配置不一致", "预期的主备切换"],
       "counter_signals": ["bond 总体仍健康时业务影响可能有限但不代表成员正常"], "required_context": ["bond 模式", "成员状态", "对端聚合配置"],
       "verification_steps": ["只读查询 bond 和成员状态", "核对对端聚合成员"],
       "branch_conditions": ["单成员 down 且总体可用时定位成员路径，不扩大为整机断网"], "stop_conditions": ["未确认冗余有效前不得继续断开剩余成员"],
@@ -391,7 +412,7 @@
       "id": "FACILITY-PSU-027", "version": "1.0.0", "status": "reviewed", "domain": "facility",
       "title": "电源模块告警调查", "applies_to": ["server", "switch", "facility"],
       "symptoms": ["PSU 缺失、失效或冗余降级"], "supporting_signals": ["power supply failure", "PSU failed", "redundancy lost"],
-      "competing_causes": ["PSU 本体故障", "输入供电或PDU路径异常", "模块未插紧或管理信息异常"],
+      "competing_causes": ["电源模块PSU本体故障", "输入供电或PDU路径异常", "模块未插紧或管理信息异常"],
       "counter_signals": ["多个设备同电源路径同时告警时削弱独立 PSU 故障判断"], "required_context": ["PSU 状态", "冗余状态", "PDU/供电路径"],
       "verification_steps": ["查询 Redfish/BMC 电源状态", "比较同供电路径设备事件"],
       "branch_conditions": ["单模块失败且输入正常时提升 PSU 候选", "多设备同路异常时提升供电路径候选"],
@@ -410,7 +431,7 @@
       "branch_conditions": ["共享供电路径且事件同步时提升共同供电候选"], "stop_conditions": ["无供电拓扑时不能确认区域电源事故"],
       "safe_actions": ["只读关联事件"], "prohibited_inferences": ["多设备离线不自动等于断电"], "sources": ["redfish", "otel_logs"],
       "review": {"reviewed_at": "2026-08-23", "review_method": "official_source_crosscheck", "owner": "product-maintainer"},
-      "match": {"rule_names": ["facility_temperature"], "fact_types": ["multi_device_power"], "terms": ["power lost", "unexpected reset", "掉电"]}
+      "match": {"rule_names": ["facility_power"], "fact_types": ["multi_device_power", "single_feed_loss", "dual_feed_loss"], "terms": ["power lost", "unexpected reset", "掉电", "feed A lost", "feed B lost"]}
     },
     {
       "id": "FACILITY-SENSOR-029", "version": "1.0.0", "status": "reviewed", "domain": "facility",
@@ -496,7 +517,7 @@
       "branch_conditions": ["确认时间偏移后重新计算关联窗口"], "stop_conditions": ["时间未校正时不确认因果先后"],
       "safe_actions": ["只读标准化时间"], "prohibited_inferences": ["时间接近不等于存在因果关系"], "sources": ["systemd_journal", "otel_logs"],
       "review": {"reviewed_at": "2026-08-23", "review_method": "official_source_crosscheck", "owner": "product-maintainer"},
-      "match": {"rule_names": [], "fact_types": ["time_discontinuity"], "terms": ["clock changed", "timestamp jump", "NTP"]}
+      "match": {"rule_names": ["system_time"], "fact_types": ["time_discontinuity", "time_sync_failure"], "terms": ["clock changed", "timestamp jump", "NTP", "No selectable sources"]}
     },
 
     {
@@ -535,7 +556,7 @@
       "stop_conditions": ["不自动修改防火墙、路由或服务配置"], "safe_actions": ["只读检查监听和连通性"],
       "prohibited_inferences": ["Connection refused 不等于网络链路中断"], "sources": ["systemd_service", "rfc2863"],
       "review": {"reviewed_at": "2026-08-23", "review_method": "official_source_crosscheck", "owner": "product-maintainer"},
-      "match": {"rule_names": ["application_runtime"], "fact_types": ["dependency_connection"], "terms": ["Connection refused", "connection timed out"]}
+      "match": {"rule_names": ["application_dependency"], "fact_types": ["dependency_connection"], "terms": ["Connection refused", "connection timed out"]}
     },
     {
       "id": "APP-LOCK-039", "version": "1.0.0", "status": "reviewed", "domain": "application",
@@ -560,6 +581,102 @@
       "safe_actions": ["只读整理重启时间线"], "prohibited_inferences": ["反复重启不等于机器硬件故障"], "sources": ["systemd_service", "systemd_journal"],
       "review": {"reviewed_at": "2026-08-23", "review_method": "official_source_crosscheck", "owner": "product-maintainer"},
       "match": {"rule_names": ["application_runtime"], "fact_types": ["restart_loop"], "terms": ["Start request repeated", "restart counter", "crash loop"]}
+    },
+    {
+      "id": "NETWORK-LACP-041", "version": "1.0.0", "status": "reviewed", "domain": "network",
+      "title": "LACP或聚合成员异常调查", "applies_to": ["linux", "server", "switch", "network"],
+      "symptoms": ["聚合成员退出但逻辑聚合可能仍然在线"], "supporting_signals": ["LACP member removed", "Port-Channel degraded", "bundle remains up"],
+      "competing_causes": ["成员链路或光模块异常", "对端聚合成员异常", "聚合配置或协商不一致"],
+      "counter_signals": ["逻辑聚合仍up时不能声称业务已经中断"], "required_context": ["聚合成员清单", "本端和对端LACP状态", "剩余带宽与业务影响"],
+      "verification_steps": ["对照本端和对端成员状态", "确认聚合剩余成员与错误计数"],
+      "branch_conditions": ["单成员两端同时down时提升该成员物理路径候选"], "stop_conditions": ["未核对完整端口和对端前不得拔线"],
+      "safe_actions": ["只读查询聚合与成员状态"], "prohibited_inferences": ["单成员退出不等于整个聚合中断"], "sources": ["linux_bonding", "rfc2863"],
+      "review": {"reviewed_at": "2026-08-24", "review_method": "official_source_crosscheck", "owner": "product-maintainer"},
+      "match": {"rule_names": ["network_redundancy"], "fact_types": ["lacp_member_down", "bond_member_down", "redundancy_degraded"], "terms": ["LACP", "Port-Channel", "active slave changed"]}
+    },
+    {
+      "id": "NETWORK-BGP-042", "version": "1.0.0", "status": "reviewed", "domain": "network",
+      "title": "BGP邻居会话下降调查", "applies_to": ["switch", "router", "network"],
+      "symptoms": ["BGP邻居从Established转为Idle、Active或Down"], "supporting_signals": ["hold timer expired", "neighbor down"],
+      "competing_causes": ["BGP对端或承载链路异常", "协议计时器或认证配置不一致", "本地控制面进程或资源异常"],
+      "counter_signals": ["路由已经绕行时业务可能未中断"], "required_context": ["邻居地址", "会话状态", "路由变化", "对端同时间日志"],
+      "verification_steps": ["查询邻居最后错误和重置原因", "核对承载接口及对端状态"],
+      "branch_conditions": ["多个邻居同时下降时提升本地控制面或共同上联候选"], "stop_conditions": ["未确认变更窗口前不重置邻居"],
+      "safe_actions": ["只读查询BGP会话与路由"], "prohibited_inferences": ["BGP down不等于本地交换机硬件故障"], "sources": ["rfc4271", "rfc2863"],
+      "review": {"reviewed_at": "2026-08-24", "review_method": "official_source_crosscheck", "owner": "product-maintainer"},
+      "match": {"rule_names": ["network_control_plane"], "fact_types": ["bgp_neighbor_down"], "terms": ["BGP", "hold timer expired", "Established -> Idle"]}
+    },
+    {
+      "id": "NETWORK-OSPF-043", "version": "1.0.0", "status": "reviewed", "domain": "network",
+      "title": "OSPF邻接关系下降调查", "applies_to": ["switch", "router", "network"],
+      "symptoms": ["OSPF邻居从Full转为Down"], "supporting_signals": ["dead timer expired", "neighbor down"],
+      "competing_causes": ["OSPF对端或承载链路异常", "Hello/Dead计时器或区域配置不一致", "设备控制面负载异常"],
+      "counter_signals": ["单邻居下降且存在冗余路由时业务可能未中断"], "required_context": ["邻居地址", "接口和区域", "路由变化", "对端状态"],
+      "verification_steps": ["查询OSPF邻居和接口状态", "核对对端及最近配置变化"],
+      "branch_conditions": ["同接口所有邻居同时down时提升承载接口候选"], "stop_conditions": ["未取得状态前不重启路由进程"],
+      "safe_actions": ["只读查询OSPF会话与路由"], "prohibited_inferences": ["OSPF down不等于交换机本体损坏"], "sources": ["rfc2328", "rfc2863"],
+      "review": {"reviewed_at": "2026-08-24", "review_method": "official_source_crosscheck", "owner": "product-maintainer"},
+      "match": {"rule_names": ["network_control_plane"], "fact_types": ["ospf_neighbor_down"], "terms": ["OSPF", "dead timer expired", "Full -> Down"]}
+    },
+    {
+      "id": "NETWORK-L2-044", "version": "1.0.0", "status": "reviewed", "domain": "network",
+      "title": "STP保护与MAC漂移调查", "applies_to": ["switch", "network"],
+      "symptoms": ["BPDU保护关闭端口或MAC在端口间反复移动"], "supporting_signals": ["BPDU Guard", "err-disabled", "MAC flapping"],
+      "competing_causes": ["二层环路或错误接线", "双归接入或虚拟机迁移", "STP/BPDU保护配置触发"],
+      "counter_signals": ["单次MAC移动可能是正常迁移"], "required_context": ["MAC和VLAN", "两个端口", "STP角色", "最近接线或配置变化"],
+      "verification_steps": ["查询MAC移动频率和端口", "检查STP角色及保护触发原因"],
+      "branch_conditions": ["多个MAC持续在相同端口对间漂移时提升二层环路候选"], "stop_conditions": ["未确认物理位置前不恢复端口或拔线"],
+      "safe_actions": ["只读查询MAC与STP状态"], "prohibited_inferences": ["BPDU保护触发不等于端口硬件故障"], "sources": ["rfc2863"],
+      "review": {"reviewed_at": "2026-08-24", "review_method": "official_source_crosscheck", "owner": "product-maintainer"},
+      "match": {"rule_names": ["network_layer2"], "fact_types": ["stp_protection", "mac_flap"], "terms": ["BPDU Guard", "err-disabled", "MAC", "flapping"]}
+    },
+    {
+      "id": "NETWORK-MLAG-045", "version": "1.0.0", "status": "reviewed", "domain": "network",
+      "title": "MLAG或vPC对等异常调查", "applies_to": ["switch", "network"],
+      "symptoms": ["对等链路或保活丢失并进入双活保护"], "supporting_signals": ["peer-link down", "peer unreachable", "dual-active"],
+      "competing_causes": ["MLAG对等链路异常", "对等保活网络异常", "对端设备重启或控制面异常"],
+      "counter_signals": ["只有保活丢失而peer-link正常时需要区分管理路径"], "required_context": ["peer-link", "keepalive", "双机状态", "业务端口影响"],
+      "verification_steps": ["对照双机peer-link和keepalive状态", "检查双活保护及下联状态"],
+      "branch_conditions": ["peer-link和keepalive同时失效时提升对端或共同路径候选"], "stop_conditions": ["未确认双机角色前不执行主备切换"],
+      "safe_actions": ["只读查询双机状态"], "prohibited_inferences": ["peer unreachable不等于对端已经掉电"], "sources": ["rfc2863"],
+      "review": {"reviewed_at": "2026-08-24", "review_method": "official_source_crosscheck", "owner": "product-maintainer"},
+      "match": {"rule_names": ["network_redundancy"], "fact_types": ["mlag_peer_down", "redundancy_degraded"], "terms": ["MLAG", "peer-link", "dual-active", "vPC"]}
+    },
+    {
+      "id": "SYSTEM-WATCHDOG-046", "version": "1.0.0", "status": "reviewed", "domain": "system",
+      "title": "内核锁死与watchdog调查", "applies_to": ["linux", "server", "kernel"],
+      "symptoms": ["soft/hard lockup或watchdog保护性重启"], "supporting_signals": ["soft lockup", "watchdog restart"],
+      "competing_causes": ["内核或驱动锁死", "CPU或硬件错误", "I/O长期阻塞"],
+      "counter_signals": ["单条watchdog信息不能区分软件和硬件"], "required_context": ["故障前内核日志", "调用栈", "MCE/BMC事件", "资源趋势"],
+      "verification_steps": ["读取上一次启动日志和调用栈", "关联驱动、MCE和BMC事件"],
+      "branch_conditions": ["固定栈重复时提升内核/驱动候选"], "stop_conditions": ["没有硬件证据时不直接更换主板"],
+      "safe_actions": ["只读收集崩溃证据"], "prohibited_inferences": ["watchdog重启不等于主板必坏"], "sources": ["kernel_admin", "kernel_ras"],
+      "review": {"reviewed_at": "2026-08-24", "review_method": "official_source_crosscheck", "owner": "product-maintainer"},
+      "match": {"rule_names": ["system_stability"], "fact_types": ["kernel_watchdog", "kernel_panic"], "terms": ["soft lockup", "watchdog", "emergency restart"]}
+    },
+    {
+      "id": "APP-NAME-TLS-047", "version": "1.0.0", "status": "reviewed", "domain": "application",
+      "title": "DNS与TLS依赖分层调查", "applies_to": ["linux", "server", "service", "application"],
+      "symptoms": ["名称解析失败或TLS证书过期"], "supporting_signals": ["name resolution", "certificate has expired", "TLS handshake failed"],
+      "competing_causes": ["DNS服务器、搜索域或名称配置异常", "TLS证书过期或信任链异常", "主机时间错误影响证书校验"],
+      "counter_signals": ["单客户端失败不能证明DNS或服务整体故障"], "required_context": ["目标域名", "解析结果", "证书链和有效期", "主机时间"],
+      "verification_steps": ["从授权位置只读解析域名", "读取证书有效期和信任链"],
+      "branch_conditions": ["多客户端均解析失败时提升DNS服务候选", "证书notAfter已过时提升证书候选"], "stop_conditions": ["不自动修改DNS或替换证书"],
+      "safe_actions": ["只读解析和证书检查"], "prohibited_inferences": ["DNS/TLS失败不等于物理网络中断"], "sources": ["otel_logs", "systemd_journal"],
+      "review": {"reviewed_at": "2026-08-24", "review_method": "official_source_crosscheck", "owner": "product-maintainer"},
+      "match": {"rule_names": ["application_dependency"], "fact_types": ["dns_failure", "tls_certificate_expired"], "terms": ["name resolution", "certificate has expired", "TLS handshake"]}
+    },
+    {
+      "id": "FACILITY-WATER-048", "version": "1.0.0", "status": "reviewed", "domain": "facility",
+      "title": "漏水范围与设备影响调查", "applies_to": ["facility", "server", "switch"],
+      "symptoms": ["漏水、渗水、积水或设备进水"], "supporting_signals": ["leak alarm", "现场水迹", "设备同时离线"],
+      "competing_causes": ["管路、屋面或墙体渗漏", "空调排水或冷却系统泄漏", "漏水传感器或线路误报"],
+      "counter_signals": ["没有接触设备时不能声称设备由漏水损坏"], "required_context": ["漏水位置和范围", "与机柜距离", "设备和供电影响", "机房/设备等级"],
+      "verification_steps": ["现场确认漏水位置与发展趋势", "关联设备、NMS和供电事件"],
+      "branch_conditions": ["进水与核心设备故障时间一致时进入核心规则"], "stop_conditions": ["设备进水时禁止自行上电"],
+      "safe_actions": ["现场观察和只读事件关联"], "prohibited_inferences": ["漏水告警本身不自动触发CC"], "sources": ["redfish", "otel_logs"],
+      "review": {"reviewed_at": "2026-08-24", "review_method": "official_source_crosscheck", "owner": "product-maintainer"},
+      "match": {"rule_names": ["facility_water"], "fact_types": ["water_leak", "core_device_failure", "no_device_impact"], "terms": ["漏水", "渗水", "进水", "water leak"]}
     }
   ]
 }

@@ -3,6 +3,7 @@ const state = {
   selectedId: null,
   selected: null,
   sources: [],
+  facilities: [],
   filter: "all",
   query: "",
 };
@@ -19,6 +20,20 @@ const labels = {
     unknown: "待确认",
   },
   source: { monitor: "监控", log: "日志", onsite: "现场" },
+  facility: { core: "核心机房", normal: "普通机房", unknown: "未确认" },
+  ccDecision: { required: "需要CC", needs_confirmation: "等待确认", not_required: "普通处理" },
+  impact: { alarm_only: "只有告警", redundancy_degraded: "冗余降低", partial_outage: "部分设备受影响", widespread_outage: "核心/大范围中断" },
+  facilityEvent: {
+    single_feed_loss: "单路掉电",
+    dual_feed_loss: "双路掉电",
+    water_leak: "漏水但未确认设备影响",
+    water_caused_core_device_failure: "漏水导致核心设备故障",
+    core_switch_outage: "核心交换机宕机",
+    temperature_rising: "温度升高",
+    power_supply_failure: "电源模块异常",
+    smoke_alarm: "烟雾或消防告警",
+    general_incident: "普通故障",
+  },
   unknown: { unknown: "未知", on: "已点亮", off: "未点亮", yes: "是", no: "否" },
 };
 
@@ -28,6 +43,7 @@ const toastEl = document.querySelector("#toast");
 const ingestDialog = document.querySelector("#ingestDialog");
 const demoDialog = document.querySelector("#demoDialog");
 const sourceDialog = document.querySelector("#sourceDialog");
+const facilityDialog = document.querySelector("#facilityDialog");
 
 function escapeHtml(value) {
   return String(value ?? "")
@@ -204,6 +220,50 @@ async function loadSources(checkExternal = false) {
   state.sources = payload.items || [];
   renderSources(state.sources);
   return state.sources;
+}
+
+function renderFacilities(items = []) {
+  const target = document.querySelector("#facilityGrid");
+  if (!items.length) {
+    target.innerHTML = `<div class="facility-empty">还没有本地机房等级。未标注的事件会显示“未确认”，系统不会根据机房名称猜测。</div>`;
+    return;
+  }
+  target.innerHTML = items.map((item) => `
+    <article class="facility-profile" data-criticality="${escapeHtml(item.criticality)}">
+      <div>
+        <small>${escapeHtml(item.source === "local_config" ? "本地标注" : item.source || "来源未知")}</small>
+        <h3>${escapeHtml(item.site)}</h3>
+        <p>${escapeHtml(item.display_name || item.site)}</p>
+      </div>
+      <strong>${escapeHtml(translated("facility", item.criticality))}</strong>
+      <time>更新于 ${escapeHtml(formatTime(item.updated_at))}</time>
+    </article>`).join("");
+}
+
+async function loadFacilities() {
+  const payload = await api("/api/facilities");
+  state.facilities = payload.items || [];
+  renderFacilities(state.facilities);
+  return state.facilities;
+}
+
+async function saveFacility(form) {
+  const button = form.querySelector('button[type="submit"]');
+  const original = button.textContent;
+  button.disabled = true;
+  button.textContent = "正在保存…";
+  try {
+    const payload = Object.fromEntries(new FormData(form).entries());
+    await api("/api/facilities", { method: "POST", body: JSON.stringify(payload) });
+    showToast(`${String(payload.site || "").toUpperCase()} 的机房等级已保存`);
+    form.reset();
+    await loadFacilities();
+  } catch (error) {
+    showToast(error.message, true);
+  } finally {
+    button.disabled = false;
+    button.textContent = original;
+  }
 }
 
 function listLines(items = [], empty = "暂无") {
@@ -424,6 +484,35 @@ function onsiteCard(card = {}) {
     </section>`;
 }
 
+function facilityAssessmentCard(assessment = {}) {
+  if (!assessment.decision) return "";
+  const facility = assessment.facility || {};
+  const event = assessment.event || {};
+  const evidence = assessment.evidence || [];
+  const missing = assessment.missing_evidence || [];
+  const decisionHint = {
+    required: "命中确定性规则：立即提醒现场按既有流程拨打 CC；后续通报流程不由 AI 接管。",
+    needs_confirmation: "证据或资产等级不足：先确认缺失项，不把高风险事件误报成已确定 CC。",
+    not_required: "当前不触发 CC：仍按普通故障流程联系接口人、系统组、网络组或动环处理。",
+  }[assessment.decision] || "等待确认处理方式。";
+  return `
+    <section class="facility-assessment" data-decision="${escapeHtml(assessment.decision)}">
+      <header class="facility-assessment-head">
+        <div><p class="eyebrow">FACILITY &amp; CC MATRIX</p><h3>机房等级、影响范围与 CC 判断</h3></div>
+        <strong>${escapeHtml(translated("ccDecision", assessment.decision))}</strong>
+      </header>
+      <div class="assessment-matrix">
+        <div><small>机房等级</small><strong>${escapeHtml(translated("facility", facility.criticality))}</strong><span>${escapeHtml(facility.source === "local_config" ? "来自本地资产标注" : facility.source === "event_input" ? "来自本次输入" : facility.source === "conflict" ? `来源冲突：输入${translated("facility", facility.reported_criticality)}，档案${translated("facility", facility.stored_criticality)}` : "没有提供，不做猜测")}</span></div>
+        <div><small>事件类型</small><strong>${escapeHtml(translated("facilityEvent", event.subtype))}</strong><span>${escapeHtml(event.category || "general")}</span></div>
+        <div><small>影响程度</small><strong>${escapeHtml(translated("impact", event.impact_level))}</strong><span>核心设备：${escapeHtml(translated("facility", event.asset_criticality))}</span></div>
+        <div><small>命中规则</small><strong>${escapeHtml(assessment.matched_rule_id || "未命中")}</strong><span>${escapeHtml(assessment.rule_version || "版本未知")}</span></div>
+      </div>
+      <div class="assessment-reason"><strong>为什么这样判断</strong><p>${escapeHtml(assessment.reason)}</p><small>${escapeHtml(decisionHint)}</small></div>
+      ${evidence.length ? `<details><summary>查看本判断使用的输入证据</summary>${listLines(evidence.map((item) => `${item.source || "输入"}：${item.text || ""}`))}</details>` : ""}
+      ${missing.length ? `<div class="assessment-missing"><strong>还缺什么</strong>${listLines(missing)}</div>` : ""}
+    </section>`;
+}
+
 function renderDetail(incident) {
   if (!incident) return;
   const investigation = incident.investigation || {};
@@ -457,6 +546,8 @@ function renderDetail(incident) {
         <p>${escapeHtml(investigation.capability_notice || "当前能力状态未知")}</p>
         ${investigation.simulation ? `<span class="simulation-badge">模拟数据 · 不代表真实设备状态</span>` : `<span class="live-input-badge">外部/人工输入 · 尚未独立核验</span>`}
       </aside>
+
+      ${facilityAssessmentCard(incident.analysis?.facility_assessment)}
 
       ${incident.cc_reminder?.required ? `
         <aside class="cc-alert" role="alert">
@@ -662,6 +753,10 @@ document.addEventListener("click", (event) => {
     openDialog(sourceDialog);
     loadSources(false).catch((error) => showToast(error.message, true));
   }
+  if (action === "open-facilities") {
+    openDialog(facilityDialog);
+    loadFacilities().catch((error) => showToast(error.message, true));
+  }
   if (action === "check-sources") {
     const button = event.target.closest("[data-action]");
     const original = button.textContent;
@@ -733,8 +828,12 @@ document.querySelector("#alertForm").addEventListener("submit", (event) => {
   event.preventDefault();
   submitForm(event.currentTarget, "alert");
 });
+document.querySelector("#facilityForm").addEventListener("submit", (event) => {
+  event.preventDefault();
+  saveFacility(event.currentTarget);
+});
 
-for (const dialog of [ingestDialog, demoDialog, sourceDialog]) {
+for (const dialog of [ingestDialog, demoDialog, sourceDialog, facilityDialog]) {
   dialog.addEventListener("click", (event) => {
     if (event.target === dialog) closeDialog(dialog);
   });
@@ -742,4 +841,5 @@ for (const dialog of [ingestDialog, demoDialog, sourceDialog]) {
 
 loadDemos();
 loadSources(false).catch(() => {});
+loadFacilities().catch(() => {});
 loadIncidents();

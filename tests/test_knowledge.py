@@ -9,7 +9,7 @@ class KnowledgeBaseTests(unittest.TestCase):
 
     def test_shipped_pack_has_required_domain_coverage(self):
         summary = self.knowledge.summary()
-        self.assertEqual(summary["card_count"], 40)
+        self.assertEqual(summary["card_count"], 48)
         self.assertGreaterEqual(summary["domains"]["storage"], 8)
         self.assertGreaterEqual(summary["domains"]["compute"], 7)
         self.assertGreaterEqual(summary["domains"]["network"], 8)
