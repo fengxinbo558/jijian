@@ -70,15 +70,38 @@ def evaluate_case(question: Mapping[str, Any]) -> Dict[str, Any]:
             missing = incident["onsite_card"].get("missing_information", [])
             check("缺失信息", all(item in missing for item in expected["missing_contains"]), True)
         if "candidate_status" in expected:
-            statuses = [item.get("status") for item in incident["analysis"].get("candidate_causes", [])]
+            statuses = [item.get("status") for item in incident["investigation"].get("hypotheses", [])]
             check("候选状态", expected["candidate_status"] in statuses, True)
-        if "max_confidence" in expected:
-            confidences = [
-                float(item.get("confidence", 0))
-                for item in incident["analysis"].get("candidate_causes", [])
-            ]
-            actual = max(confidences or [0]) <= float(expected["max_confidence"])
-            check("最大置信度限制", actual, True)
+        investigation = incident["investigation"]
+        if "investigation_mode" in expected:
+            check("调查模式", investigation["mode"], expected["investigation_mode"])
+        if "fact_types_contains" in expected:
+            fact_types = {item.get("type") for item in investigation.get("extracted_facts", [])}
+            check("事实类型", all(item in fact_types for item in expected["fact_types_contains"]), True)
+        if "knowledge_card_contains" in expected:
+            identifiers = {
+                item.get("id")
+                for item in investigation.get("knowledge_retrieval", {}).get("cards", [])
+            }
+            check("知识卡召回", expected["knowledge_card_contains"] in identifiers, True)
+        if "knowledge_coverage" in expected:
+            check(
+                "知识覆盖",
+                investigation.get("knowledge_retrieval", {}).get("coverage"),
+                expected["knowledge_coverage"],
+            )
+        if "correlation_level" in expected:
+            check("事件关联等级", investigation.get("correlation", {}).get("level"), expected["correlation_level"])
+        if expected.get("no_confidence"):
+            no_confidence = all(
+                "confidence" not in item for item in investigation.get("hypotheses", [])
+            )
+            check("不展示虚假置信百分比", no_confidence, True)
+        if expected.get("conclusion_not_confirmed"):
+            check("结论不得越级确认", investigation.get("conclusion", {}).get("grade") != "confirmed", True)
+        if "next_step_contains" in expected:
+            next_step = investigation.get("conclusion", {}).get("next_step", "")
+            check("下一步检查", expected["next_step_contains"].lower() in str(next_step).lower(), True)
 
         passed = all(item["passed"] for item in checks)
         return {
@@ -106,7 +129,13 @@ def build_report(results: List[Dict[str, Any]], started_at: str) -> Tuple[Dict[s
             "checks_passed": passed_checks,
             "checks_total": total_checks,
             "check_pass_rate": passed_checks / total_checks if total_checks else 0,
+            "evaluation_mode": "rules_only_baseline",
+            "ai_comparison_status": "not_run_model_disabled",
         },
+        "limitations": [
+            "本报告验证规则基线、知识召回、审计结构和安全边界，不代表生产故障定位准确率。",
+            "当前未配置真实大模型，因此不声称 AI 增强优于规则基线。",
+        ],
         "results": results,
     }
     lines = [
@@ -115,6 +144,8 @@ def build_report(results: List[Dict[str, Any]], started_at: str) -> Tuple[Dict[s
         f"- 题目通过：{passed}/{len(results)}",
         f"- 检查点通过：{passed_checks}/{total_checks}",
         f"- 题目通过率：{report['summary']['question_pass_rate']:.1%}",
+        "- 评测模式：规则＋知识基线（大模型未启用）",
+        "- 重要限制：模拟题只能验证调查结构和安全边界，不能证明生产准确率",
         "",
         "| 题号 | 场景 | 结果 | 失败检查点 |",
         "|---|---|---|---|",
@@ -155,4 +186,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

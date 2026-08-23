@@ -1,14 +1,20 @@
 {
-  "started_at": "2026-08-23T11:05:51+00:00",
-  "finished_at": "2026-08-23T11:05:51+00:00",
+  "started_at": "2026-08-23T14:00:08+00:00",
+  "finished_at": "2026-08-23T14:00:08+00:00",
   "summary": {
     "questions_passed": 12,
     "questions_total": 12,
     "question_pass_rate": 1.0,
-    "checks_passed": 54,
-    "checks_total": 54,
-    "check_pass_rate": 1.0
+    "checks_passed": 73,
+    "checks_total": 73,
+    "check_pass_rate": 1.0,
+    "evaluation_mode": "rules_only_baseline",
+    "ai_comparison_status": "not_run_model_disabled"
   },
+  "limitations": [
+    "本报告验证规则基线、知识召回、审计结构和安全边界，不代表生产故障定位准确率。",
+    "当前未配置真实大模型，因此不声称 AI 增强优于规则基线。"
+  ],
   "results": [
     {
       "id": "Q01",
@@ -50,10 +56,40 @@
           "actual": true,
           "expected": true,
           "passed": true
+        },
+        {
+          "name": "调查模式",
+          "actual": "rules_only",
+          "expected": "rules_only",
+          "passed": true
+        },
+        {
+          "name": "事实类型",
+          "actual": true,
+          "expected": true,
+          "passed": true
+        },
+        {
+          "name": "知识卡召回",
+          "actual": true,
+          "expected": true,
+          "passed": true
+        },
+        {
+          "name": "不展示虚假置信百分比",
+          "actual": true,
+          "expected": true,
+          "passed": true
+        },
+        {
+          "name": "结论不得越级确认",
+          "actual": true,
+          "expected": true,
+          "passed": true
         }
       ],
       "incident_ids": [
-        "INC-20260823-A3668B"
+        "INC-20260823-EB3C0F"
       ]
     },
     {
@@ -84,10 +120,28 @@
           "actual": true,
           "expected": true,
           "passed": true
+        },
+        {
+          "name": "事实类型",
+          "actual": true,
+          "expected": true,
+          "passed": true
+        },
+        {
+          "name": "知识卡召回",
+          "actual": true,
+          "expected": true,
+          "passed": true
+        },
+        {
+          "name": "结论不得越级确认",
+          "actual": true,
+          "expected": true,
+          "passed": true
         }
       ],
       "incident_ids": [
-        "INC-20260823-5803B5"
+        "INC-20260823-C3A146"
       ]
     },
     {
@@ -121,7 +175,7 @@
         }
       ],
       "incident_ids": [
-        "INC-20260823-DFDA00"
+        "INC-20260823-122CDB"
       ]
     },
     {
@@ -155,7 +209,7 @@
         }
       ],
       "incident_ids": [
-        "INC-20260823-EF47F6"
+        "INC-20260823-037416"
       ]
     },
     {
@@ -192,10 +246,28 @@
           "actual": true,
           "expected": true,
           "passed": true
+        },
+        {
+          "name": "事实类型",
+          "actual": true,
+          "expected": true,
+          "passed": true
+        },
+        {
+          "name": "知识卡召回",
+          "actual": true,
+          "expected": true,
+          "passed": true
+        },
+        {
+          "name": "不展示虚假置信百分比",
+          "actual": true,
+          "expected": true,
+          "passed": true
         }
       ],
       "incident_ids": [
-        "INC-20260823-A47506"
+        "INC-20260823-A0D728"
       ]
     },
     {
@@ -226,10 +298,28 @@
           "actual": true,
           "expected": true,
           "passed": true
+        },
+        {
+          "name": "事实类型",
+          "actual": true,
+          "expected": true,
+          "passed": true
+        },
+        {
+          "name": "知识卡召回",
+          "actual": true,
+          "expected": true,
+          "passed": true
+        },
+        {
+          "name": "下一步检查",
+          "actual": true,
+          "expected": true,
+          "passed": true
         }
       ],
       "incident_ids": [
-        "INC-20260823-A722B9"
+        "INC-20260823-26ECCA"
       ]
     },
     {
@@ -266,10 +356,22 @@
           "actual": true,
           "expected": true,
           "passed": true
+        },
+        {
+          "name": "事件关联等级",
+          "actual": "explicit",
+          "expected": "explicit",
+          "passed": true
+        },
+        {
+          "name": "结论不得越级确认",
+          "actual": true,
+          "expected": true,
+          "passed": true
         }
       ],
       "incident_ids": [
-        "INC-20260823-5C9262"
+        "INC-20260823-533D63"
       ]
     },
     {
@@ -303,7 +405,7 @@
         }
       ],
       "incident_ids": [
-        "INC-20260823-C6C04B"
+        "INC-20260823-EB0F86"
       ]
     },
     {
@@ -340,10 +442,16 @@
           "actual": 2,
           "expected": 2,
           "passed": true
+        },
+        {
+          "name": "事件关联等级",
+          "actual": "explicit",
+          "expected": "explicit",
+          "passed": true
         }
       ],
       "incident_ids": [
-        "INC-20260823-F4D6E7"
+        "INC-20260823-BBDE80"
       ]
     },
     {
@@ -371,8 +479,8 @@
         }
       ],
       "incident_ids": [
-        "INC-20260823-80913A",
-        "INC-20260823-92063B"
+        "INC-20260823-0EADE2",
+        "INC-20260823-589367"
       ]
     },
     {
@@ -412,7 +520,7 @@
         }
       ],
       "incident_ids": [
-        "INC-20260823-B69FA1"
+        "INC-20260823-AFD6D4"
       ]
     },
     {
@@ -445,14 +553,26 @@
           "passed": true
         },
         {
-          "name": "最大置信度限制",
+          "name": "知识覆盖",
+          "actual": "insufficient",
+          "expected": "insufficient",
+          "passed": true
+        },
+        {
+          "name": "不展示虚假置信百分比",
+          "actual": true,
+          "expected": true,
+          "passed": true
+        },
+        {
+          "name": "结论不得越级确认",
           "actual": true,
           "expected": true,
           "passed": true
         }
       ],
       "incident_ids": [
-        "INC-20260823-CE04A4"
+        "INC-20260823-757284"
       ]
     }
   ]

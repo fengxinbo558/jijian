@@ -45,7 +45,7 @@ class AppHTTPServer(ThreadingHTTPServer):
 
 
 class RequestHandler(BaseHTTPRequestHandler):
-    server_version = "IDCAIOps/0.1"
+    server_version = "IDCAIOps/0.2"
 
     @property
     def app(self) -> AppHTTPServer:
@@ -71,6 +71,9 @@ class RequestHandler(BaseHTTPRequestHandler):
                         "ok": True,
                         "service": "IDC AI 故障调查台",
                         "ai_enabled": self.app.service.ai.enabled,
+                        "analysis_mode": "ai_enriched" if self.app.service.ai.enabled else "rules_only",
+                        "collectors_connected": [],
+                        "knowledge": self.app.service.knowledge.summary(),
                     },
                 )
             elif path == "/api/incidents":
@@ -125,6 +128,8 @@ class RequestHandler(BaseHTTPRequestHandler):
                 for item in case["inputs"]:
                     demo_payload = dict(item)
                     source = str(demo_payload.pop("source"))
+                    demo_payload["demo_id"] = demo_id
+                    demo_payload["is_demo"] = True
                     results.append(self.app.service.ingest(source, demo_payload))
                 unique = {item["id"]: item for item in results}
                 self._json(

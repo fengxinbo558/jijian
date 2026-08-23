@@ -145,17 +145,47 @@ function identityStrip(device) {
     </div>`;
 }
 
-function candidateList(candidates = []) {
-  if (!candidates.length) return `<p class="list-empty">还没有可展示的根因候选。</p>`;
-  return `<ul class="candidate-list">${candidates.map((candidate) => `
-    <li class="candidate-item">
-      <div class="candidate-top">
-        <span class="candidate-title">${escapeHtml(candidate.title)}</span>
-        <span class="confidence">${Math.round(Number(candidate.confidence || 0) * 100)}%</span>
-      </div>
-      <p class="candidate-meta">证据：${escapeHtml((candidate.evidence_ids || []).join("、") || "暂无直接证据")} · ${escapeHtml(candidate.status || "候选")}</p>
-      <p class="candidate-meta">反证检查：${escapeHtml(candidate.counter_evidence || "未提供")}</p>
-    </li>`).join("")}</ul>`;
+function statusLabel(value) {
+  return {
+    confirmed: "已确认",
+    high_likelihood: "较大可能",
+    candidate: "调查候选",
+    weakened: "已削弱",
+    rejected: "已排除",
+    insufficient: "证据不足",
+  }[value] || value || "证据不足";
+}
+
+function modeLabel(value) {
+  return {
+    rules_only: "规则＋知识",
+    ai_enriched: "大模型增强",
+    tool_assisted: "工具验证",
+    legacy_untraced: "旧版事件",
+  }[value] || value || "未知模式";
+}
+
+function listLines(items = [], empty = "暂无") {
+  if (!items.length) return `<p class="muted-empty">${escapeHtml(empty)}</p>`;
+  return `<ul class="plain-list">${items.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>`;
+}
+
+function hypothesisList(hypotheses = []) {
+  if (!hypotheses.length) return `<p class="list-empty">没有可审计的候选。请补充新的日志或检查结果。</p>`;
+  return `<div class="hypothesis-list">${hypotheses.map((hypothesis) => `
+    <article class="hypothesis-card" data-status="${escapeHtml(hypothesis.status)}">
+      <header>
+        <div><span class="hypothesis-id">${escapeHtml(hypothesis.id)}</span><h4>${escapeHtml(hypothesis.title)}</h4></div>
+        <span class="grade-chip" data-grade="${escapeHtml(hypothesis.status)}">${escapeHtml(statusLabel(hypothesis.status))}</span>
+      </header>
+      <p class="candidate-meta">${escapeHtml(hypothesis.basis || "尚未说明形成依据")}</p>
+      <dl class="evidence-dl">
+        <div><dt>支持证据</dt><dd>${escapeHtml((hypothesis.supporting_evidence_ids || []).join("、") || "无直接证据")}</dd></div>
+        <div><dt>需要补充</dt><dd>${escapeHtml((hypothesis.missing_evidence || []).join("；") || "暂无")}</dd></div>
+        <div><dt>会削弱它的情况</dt><dd>${escapeHtml((hypothesis.known_counter_conditions || []).join("；") || "尚未列出")}</dd></div>
+        <div><dt>产生方式</dt><dd>${escapeHtml(hypothesis.generated_by === "model_enhanced" ? "大模型增强（已校验证据引用）" : hypothesis.knowledge_card_id ? `知识卡 ${hypothesis.knowledge_card_id} · ${hypothesis.knowledge_card_version}` : "规则降级候选")}</dd></div>
+      </dl>
+    </article>`).join("")}</div>`;
 }
 
 function evidenceList(evidence = []) {
@@ -165,6 +195,112 @@ function evidenceList(evidence = []) {
       <span class="evidence-id">${escapeHtml(item.id)}</span>
       <p class="evidence-text">${escapeHtml(item.text)}</p>
     </li>`).join("")}</ol>`;
+}
+
+function provenanceTable(fields = []) {
+  if (!fields.length) return `<p class="muted-empty">没有字段溯源记录。</p>`;
+  return `<div class="provenance-table" role="table" aria-label="字段来源">
+    <div class="provenance-row provenance-head" role="row"><span>字段</span><span>当前值</span><span>怎么得到</span><span>是否核验</span></div>
+    ${fields.map((field) => `<div class="provenance-row" role="row">
+      <span>${escapeHtml(field.label)}</span>
+      <code>${escapeHtml(field.value || "未知")}</code>
+      <span>${escapeHtml(field.method === "provided" ? field.source_label : "输入未提供")}</span>
+      <span class="provenance-state" data-reliability="${escapeHtml(field.reliability)}">${escapeHtml(field.verification)}</span>
+    </div>`).join("")}
+  </div>`;
+}
+
+function factTable(facts = []) {
+  if (!facts.length) return `<div class="analysis-warning">没有从当前原文提取到结构化异常事实。系统保留了原文，但不会为了给出答案而补造事实。</div>`;
+  return `<div class="fact-grid">${facts.map((fact) => `
+    <article class="fact-card">
+      <span class="fact-type">${escapeHtml(fact.type)}</span>
+      <strong>${escapeHtml(fact.label)}</strong>
+      <code>${escapeHtml(fact.value)}${escapeHtml(fact.unit || "")}</code>
+      <p>${escapeHtml(fact.excerpt)}</p>
+      <small>证据 ${escapeHtml((fact.evidence_ids || []).join("、"))} · ${escapeHtml(fact.parser)}</small>
+    </article>`).join("")}</div>`;
+}
+
+function ruleAndKnowledge(investigation) {
+  const rules = investigation.rule_matches || [];
+  const cards = investigation.knowledge_retrieval?.cards || [];
+  return `<div class="matched-columns">
+    <div><h4>命中规则</h4>${rules.length ? rules.map((rule) => `
+      <article class="match-card">
+        <span class="match-id">${escapeHtml(rule.id)}</span><strong>${escapeHtml(rule.title)}</strong>
+        <p>范围：${escapeHtml(rule.scope)}</p><p class="limitation">能力边界：${escapeHtml(rule.limitation)}</p>
+      </article>`).join("") : `<p class="muted-empty">没有规则命中。</p>`}</div>
+    <div><h4>召回知识卡</h4>${cards.length ? cards.map((card) => `
+      <article class="match-card knowledge-card">
+        <span class="match-id">${escapeHtml(card.id)} · v${escapeHtml(card.version)}</span><strong>${escapeHtml(card.title)}</strong>
+        <p>召回原因：${escapeHtml((card.retrieval_reasons || []).join("；"))}</p>
+        <p class="limitation">禁止推断：${escapeHtml((card.prohibited_inferences || []).join("；"))}</p>
+        <div class="source-links">${(card.sources || []).map((source) => `<a href="${escapeHtml(source.url)}" target="_blank" rel="noreferrer">${escapeHtml(source.title)} · ${escapeHtml(source.version)}</a>`).join("")}</div>
+      </article>`).join("") : `<p class="muted-empty">知识覆盖不足，系统不会用常识补答案。</p>`}</div>
+  </div>`;
+}
+
+function correlationPanel(correlation = {}) {
+  return `<div class="correlation-panel" data-level="${escapeHtml(correlation.level)}">
+    <div><small>关联等级</small><strong>${escapeHtml({ explicit: "外部明确指定", deterministic: "确定性设备关联", possible: "可能相关", none: "未关联", unknown: "历史未知" }[correlation.level] || correlation.level)}</strong></div>
+    <div><small>关联键</small><code>${escapeHtml(correlation.key || "无")}</code></div>
+    <p>${escapeHtml(correlation.reason || "没有关联说明")}</p>
+    ${listLines(correlation.limitations || [], "没有额外限制")}
+  </div>`;
+}
+
+function verificationPlan(items = []) {
+  if (!items.length) return `<p class="muted-empty">尚未形成下一步验证。</p>`;
+  return `<ol class="verification-list">${items.map((item) => `
+    <li>
+      <span class="verification-priority">${String(item.priority || 0).padStart(2, "0")}</span>
+      <div>
+        <h4>${escapeHtml(item.method)}</h4>
+        <p>${escapeHtml(item.purpose)}</p>
+        <div class="verification-meta"><span>风险：只读</span><span>工具：${item.tool === "not_connected" ? "未接入，待人工/外部执行" : escapeHtml(item.tool)}</span></div>
+        <details><summary>这一步怎样改变判断</summary>${listLines(item.expected_effects || [], "等待检查结果")}</details>
+      </div>
+    </li>`).join("")}</ol>`;
+}
+
+function intakeList(intake = []) {
+  if (!intake.length) return `<p class="muted-empty">没有可审计的原始输入。</p>`;
+  return `<div class="intake-list">${intake.map((item) => `
+    <details class="intake-card">
+      <summary><span class="intake-summary"><strong>${escapeHtml(item.source_label)}</strong><small>${escapeHtml(item.summary)}</small></span><time>${escapeHtml(formatTime(item.event_time))}</time>${item.simulation ? `<b>模拟数据</b>` : ""}</summary>
+      <div class="intake-body"><p>${escapeHtml(item.summary)}</p><pre>${escapeHtml(item.raw_text)}</pre><small>输入编号 ${escapeHtml(item.id)} · 类型 ${escapeHtml(item.source_kind)}</small></div>
+    </details>`).join("")}</div>`;
+}
+
+function traceContent(stage, investigation) {
+  if (stage === "received") return intakeList(investigation.intake);
+  if (stage === "normalized") return provenanceTable(investigation.field_provenance);
+  if (stage === "extracted") return factTable(investigation.extracted_facts);
+  if (stage === "matched") return ruleAndKnowledge(investigation);
+  if (stage === "correlated") return correlationPanel(investigation.correlation);
+  if (stage === "hypothesized") return hypothesisList(investigation.hypotheses);
+  if (stage === "model_enriched") return `<div class="model-observation"><p>${escapeHtml(investigation.model_observation?.impact_summary || "模型没有新增影响摘要")}</p>${listLines(investigation.model_observation?.limitations || [])}</div>`;
+  if (stage === "planned") return verificationPlan(investigation.verification_plan);
+  return `<p class="muted-empty">该步骤没有详细输出。</p>`;
+}
+
+function traceLine(investigation) {
+  const trace = investigation.trace || [];
+  if (!trace.length) return `<div class="analysis-warning">${escapeHtml(investigation.capability_notice || "没有可审计调查轨迹")}</div>`;
+  return `<div class="evidence-line">${trace.map((node, index) => `
+    <details class="evidence-node" data-state="${escapeHtml(node.state)}" ${index === 0 || node.stage === "extracted" ? "open" : ""}>
+      <summary>
+        <span class="node-marker" aria-hidden="true"></span>
+        <span class="node-order">${String(index + 1).padStart(2, "0")}</span>
+        <span class="node-title"><strong>${escapeHtml(node.title)}</strong><small>${escapeHtml(node.summary)}</small></span>
+        <span class="node-state">${escapeHtml({ confirmed: "已保存", reported: "外部提供", inferred: "系统推断", waiting: "等待验证" }[node.state] || node.state)}</span>
+      </summary>
+      <div class="node-detail">
+        ${traceContent(node.stage, investigation)}
+        <p class="node-limitation">本步限制：${escapeHtml(node.limitation)}</p>
+      </div>
+    </details>`).join("")}</div>`;
 }
 
 function onsiteCard(card = {}) {
@@ -203,7 +339,8 @@ function onsiteCard(card = {}) {
 
 function renderDetail(incident) {
   if (!incident) return;
-  const analysis = incident.analysis || {};
+  const investigation = incident.investigation || {};
+  const conclusion = investigation.conclusion || {};
   const device = incident.devices?.[0] || {};
   const moreDevices = (incident.devices || []).slice(1);
   document.querySelector("#workspaceKicker").textContent = incident.id;
@@ -212,7 +349,7 @@ function renderDetail(incident) {
     <article class="incident-layout">
       <header class="incident-heading">
         <div>
-          <p class="eyebrow">EVIDENCE-BACKED INCIDENT</p>
+          <p class="eyebrow">AUDITABLE INCIDENT INVESTIGATION</p>
           <h2>${escapeHtml(incident.title)}</h2>
           <p class="incident-summary">${escapeHtml(incident.summary)}</p>
         </div>
@@ -224,7 +361,13 @@ function renderDetail(incident) {
       </header>
 
       ${identityStrip(device)}
-      ${moreDevices.length ? `<p class="multi-device-note">已关联另外 ${moreDevices.length} 台设备：${moreDevices.map((item) => escapeHtml(item.sn || item.name || item.rack_position)).join("、")}</p>` : ""}
+      ${moreDevices.length ? `<p class="multi-device-note">事件中还有 ${moreDevices.length} 台设备：${moreDevices.map((item) => escapeHtml(item.sn || item.name || item.rack_position)).join("、")}。这不代表系统已经证明它们具有相同根因，请查看下方“事件关联”。</p>` : ""}
+
+      <aside class="capability-banner" data-mode="${escapeHtml(investigation.mode)}">
+        <div class="capability-mode"><span>当前分析模式</span><strong>${escapeHtml(modeLabel(investigation.mode))}</strong></div>
+        <p>${escapeHtml(investigation.capability_notice || "当前能力状态未知")}</p>
+        ${investigation.simulation ? `<span class="simulation-badge">模拟数据 · 不代表真实设备状态</span>` : `<span class="live-input-badge">外部/人工输入 · 尚未独立核验</span>`}
+      </aside>
 
       ${incident.cc_reminder?.required ? `
         <aside class="cc-alert" role="alert">
@@ -232,18 +375,25 @@ function renderDetail(incident) {
           <div><strong>${escapeHtml(incident.cc_reminder.message)}</strong><p>${escapeHtml(incident.cc_reminder.reason || "输入已明确标记需要通报")}</p></div>
         </aside>` : ""}
 
-      <div class="detail-grid">
+      <section class="conclusion-board" data-grade="${escapeHtml(conclusion.grade)}">
+        <div class="conclusion-grade"><small>当前结论等级</small><strong>${escapeHtml(statusLabel(conclusion.grade))}</strong></div>
+        <div class="conclusion-main"><small>目前最需要验证的候选</small><h3>${escapeHtml(conclusion.leading_hypothesis || "证据不足")}</h3><p>${escapeHtml(conclusion.uncertainty || "尚未说明不确定性")}</p></div>
+        <div class="next-check"><small>下一项建议检查</small><strong>${escapeHtml(conclusion.next_step || "补充更多证据")}</strong><span>只读优先 · 结果回来后重新排序候选</span></div>
+      </section>
+
+      <section class="investigation-section">
+        <div class="section-heading investigation-heading"><div><p class="eyebrow">EVIDENCE ROUTE</p><h3>数据怎样一步步变成当前判断</h3></div><small>点击每一步查看原文、依据和限制</small></div>
+        ${traceLine(investigation)}
+      </section>
+
+      <div class="detail-grid lower-grid">
         <div class="detail-column">
           <section class="section-block">
-            <div class="section-heading"><h3>根因候选</h3><small>${analysis.ai_mode === "model_enhanced" ? "模型增强" : "规则分析"}</small></div>
-            ${candidateList(analysis.candidate_causes)}
+            <div class="section-heading"><h3>原始证据</h3><small>${(investigation.evidence || []).length} 条</small></div>
+            ${evidenceList(investigation.evidence)}
           </section>
           <section class="section-block">
-            <div class="section-heading"><h3>关键证据</h3><small>${(incident.evidence || []).length} 条</small></div>
-            ${evidenceList(incident.evidence)}
-          </section>
-          <section class="section-block">
-            <div class="section-heading"><h3>接口沟通摘要</h3><small>可复制</small></div>
+            <div class="section-heading"><h3>接口沟通摘要</h3><small>只使用已保存结果</small></div>
             <div class="communication-box" id="communicationText">${escapeHtml(incident.communication_text)}</div>
             <div class="copy-row"><button class="secondary-button" data-action="copy-summary" type="button">复制摘要</button></div>
           </section>
@@ -259,10 +409,8 @@ function renderDetail(incident) {
             </div>
           </section>
           <section class="section-block">
-            <div class="section-heading"><h3>证据来源</h3><small>${(incident.inputs || []).length} 次输入</small></div>
-            <ul class="evidence-list">${(incident.inputs || []).map((input) => `
-              <li class="evidence-item"><span class="evidence-id">${escapeHtml(translated("source", input.source))}</span><p class="evidence-text">${escapeHtml(formatTime(input.event_time))} · ${escapeHtml(input.payload?.summary || "补充证据")}</p></li>
-            `).join("") || `<li class="list-empty">暂无输入记录</li>`}</ul>
+            <div class="section-heading"><h3>调查输入</h3><small>${(investigation.intake || []).length} 次输入</small></div>
+            ${intakeList(investigation.intake)}
           </section>
         </div>
       </div>

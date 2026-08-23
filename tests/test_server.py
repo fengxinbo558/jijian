@@ -39,6 +39,9 @@ class ServerIntegrationTests(unittest.TestCase):
         status, health = self.request_json("/api/health")
         self.assertEqual(status, 200)
         self.assertTrue(health["ok"])
+        self.assertEqual(health["analysis_mode"], "rules_only")
+        self.assertEqual(health["knowledge"]["card_count"], 40)
+        self.assertEqual(health["collectors_connected"], [])
         status, incident = self.request_json(
             "/api/ingest/alert",
             {
@@ -63,6 +66,13 @@ class ServerIntegrationTests(unittest.TestCase):
         status, payload = self.request_json("/api/demos/network-optic/run", {})
         self.assertEqual(status, 201)
         self.assertEqual(payload["incidents"][0]["category"], "network")
+        self.assertTrue(payload["incidents"][0]["investigation"]["simulation"])
+        self.assertTrue(
+            all(
+                item["source_label"] == "内置测试场景"
+                for item in payload["incidents"][0]["investigation"]["intake"]
+            )
+        )
 
     def test_log_and_onsite_ingest_endpoints(self):
         status, log_incident = self.request_json(

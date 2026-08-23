@@ -206,12 +206,12 @@ def analyze_rules(event: NormalizedInput) -> RuleAnalysis:
         causes = [
             {
                 "title": cause,
-                "confidence": max(0.45, 0.82 - (index * 0.14)),
                 "evidence_ids": [item["id"] for item in evidence[:3]],
                 "counter_evidence": "当前输入未提供足够反证，需继续验证",
-                "status": "候选",
+                "status": "candidate",
+                "basis": "规则匹配产生的调查候选，尚未通过工具或人工确认",
             }
-            for index, cause in enumerate(rule.causes)
+            for cause in rule.causes
         ]
         severity = (
             event.severity
@@ -228,10 +228,10 @@ def analyze_rules(event: NormalizedInput) -> RuleAnalysis:
         causes = [
             {
                 "title": "当前证据不足，故障类型待确认",
-                "confidence": 0.2,
                 "evidence_ids": ["E1"],
                 "counter_evidence": "缺少可识别的日志模式或结构化告警",
-                "status": "待确认",
+                "status": "candidate",
+                "basis": "知识与规则覆盖不足",
             }
         ]
         severity = event.severity

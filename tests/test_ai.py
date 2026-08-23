@@ -53,17 +53,15 @@ class AIEnricherTests(unittest.TestCase):
                                 "candidate_causes": [
                                     {
                                         "title": "磁盘介质异常",
-                                        "confidence": 0.9,
                                         "evidence_ids": ["E1"],
                                         "counter_evidence": "缺少SMART完整结果",
-                                        "status": "候选",
+                                        "status": "confirmed",
                                     },
                                     {
                                         "title": "无证据猜测",
-                                        "confidence": 0.95,
                                         "evidence_ids": ["E999"],
                                         "counter_evidence": "无",
-                                        "status": "候选",
+                                        "status": "high_likelihood",
                                     },
                                 ],
                             },
@@ -95,10 +93,11 @@ class AIEnricherTests(unittest.TestCase):
         self.assertIsNotNone(result)
         self.assertNotIn("must-not-leave", captured["body"])
         self.assertNotIn("summarysecret", captured["body"])
+        self.assertNotIn("AI-TEST-SN-001", captured["body"])
         self.assertIn("[REDACTED]", captured["body"])
-        self.assertEqual(result["candidate_causes"][0]["status"], "候选")
-        self.assertEqual(result["candidate_causes"][1]["status"], "待确认")
-        self.assertLessEqual(result["candidate_causes"][1]["confidence"], 0.35)
+        self.assertEqual(result["candidate_causes"][0]["status"], "candidate")
+        self.assertEqual(len(result["candidate_causes"]), 1)
+        self.assertNotIn("confidence", result["candidate_causes"][0])
 
 
 if __name__ == "__main__":

@@ -8,6 +8,8 @@ import uuid
 from typing import Any, Dict, Iterable, List, Mapping, Optional
 
 from .ai import AIEnricher
+from .investigation import apply_model_enrichment, build_investigation, merge_investigations
+from .knowledge import KnowledgeBase
 from .models import NormalizedInput, RuleAnalysis, utc_now
 from .rules import analyze_rules
 from .store import IncidentStore
@@ -65,6 +67,10 @@ def normalize_input(source: str, payload: Mapping[str, Any]) -> NormalizedInput:
         labels["cc_required"] = payload["cc_required"]
     if "incident_key" in payload:
         labels["incident_key"] = payload["incident_key"]
+    if "demo_id" in payload:
+        labels["demo_id"] = payload["demo_id"]
+    if "is_demo" in payload:
+        labels["is_demo"] = payload["is_demo"]
 
     if source == "monitor":
         summary = _coalesce(payload.get("summary"), payload.get("title"), payload.get("message"))
@@ -94,21 +100,39 @@ def normalize_input(source: str, payload: Mapping[str, Any]) -> NormalizedInput:
 
 
 class IncidentService:
-    def __init__(self, store: IncidentStore, ai: Optional[AIEnricher] = None) -> None:
+    def __init__(
+        self,
+        store: IncidentStore,
+        ai: Optional[AIEnricher] = None,
+        knowledge: Optional[KnowledgeBase] = None,
+    ) -> None:
         self.store = store
         self.ai = ai or AIEnricher()
+        self.knowledge = knowledge or KnowledgeBase()
 
     def ingest(self, source: str, payload: Mapping[str, Any]) -> Dict[str, Any]:
         event = normalize_input(source, payload)
         analysis = analyze_rules(event)
-        enriched = self.ai.enrich(event, analysis)
-        analysis_dict = self._combine_analysis(analysis, enriched)
         correlation_key = self._correlation_key(event, analysis.category)
+        investigation = build_investigation(
+            event,
+            analysis,
+            correlation_key,
+            self.knowledge,
+            model_enriched=False,
+        )
+        enriched = self.ai.enrich(event, analysis, investigation)
+        analysis_dict = self._combine_analysis(analysis, enriched)
+        if enriched:
+            investigation = apply_model_enrichment(investigation, enriched)
         existing = self.store.find_merge_candidate(event, analysis.category, correlation_key)
         if existing:
-            update = self._merge(existing, event, analysis, analysis_dict)
+            investigation = merge_investigations(existing.get("investigation", {}), investigation)
+            update = self._merge(existing, event, analysis, analysis_dict, investigation)
             return self.store.merge_incident(existing["id"], update, event)
-        incident = self._new_incident(event, analysis, analysis_dict, correlation_key)
+        incident = self._new_incident(
+            event, analysis, analysis_dict, correlation_key, investigation
+        )
         return self.store.create_incident(incident, event)
 
     @staticmethod
@@ -268,6 +292,7 @@ class IncidentService:
         analysis: RuleAnalysis,
         analysis_dict: Dict[str, Any],
         correlation_key: str,
+        investigation: Dict[str, Any],
     ) -> Dict[str, Any]:
         now = utc_now()
         devices = self._unique_devices([event.device.to_dict()])
@@ -285,6 +310,7 @@ class IncidentService:
             "devices": devices,
             "evidence": self._unique_evidence(analysis.evidence),
             "analysis": analysis_dict,
+            "investigation": investigation,
             "onsite_card": self._onsite_card(event, analysis),
             "cc_reminder": self._cc_reminder(analysis),
             "communication_text": self._communication(event, analysis, devices),
@@ -298,6 +324,7 @@ class IncidentService:
         event: NormalizedInput,
         analysis: RuleAnalysis,
         analysis_dict: Dict[str, Any],
+        investigation: Dict[str, Any],
     ) -> Dict[str, Any]:
         devices = self._unique_devices(list(existing.get("devices", [])) + [event.device.to_dict()])
         evidence = self._unique_evidence(list(existing.get("evidence", [])) + analysis.evidence)
@@ -317,6 +344,7 @@ class IncidentService:
             "devices": devices,
             "evidence": evidence,
             "analysis": analysis_dict,
+            "investigation": investigation,
             "onsite_card": onsite_card,
             "cc_reminder": self._cc_reminder(analysis, existing.get("cc_reminder")),
             "communication_text": self._communication(event, analysis, devices),
@@ -331,4 +359,3 @@ class IncidentService:
 
     def update_status(self, incident_id: str, status: str) -> Optional[Dict[str, Any]]:
         return self.store.update_status(incident_id, status)
-

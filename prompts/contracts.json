@@ -1,0 +1,33 @@
+{
+  "schema_version": "1.0.0",
+  "contracts": {
+    "parser": {
+      "version": "parser-v1.0.0",
+      "purpose": "从脱敏日志中提取事实，不生成根因",
+      "output": ["facts", "objects", "timestamps", "evidence_ids"],
+      "forbidden": ["root_cause", "device_identity_inference", "operation_permission"]
+    },
+    "hypothesis": {
+      "version": "hypothesis-v1.0.0",
+      "purpose": "基于事实和召回知识形成竞争假设",
+      "instructions": "只依据提供的事实、证据和知识卡输出竞争假设。每项必须引用已有 evidence_ids，说明反证条件和缺失信息。不得猜测设备身份、机架位、物理槽位、拓扑或操作许可。没有真实工具确认时不得使用 confirmed。",
+      "output": ["impact_summary", "candidate_causes", "missing_information"],
+      "allowed_status": ["candidate", "high_likelihood"],
+      "forbidden": ["confidence_percentage", "confirmed_without_tool", "dangerous_action"]
+    },
+    "next_step": {
+      "version": "next-step-v1.0.0",
+      "purpose": "选择安全且信息增益较高的下一项验证",
+      "instructions": "只从可用的只读检查中选择。说明检查目的、需要权限、预期结果以及对候选假设的影响。不得建议关机、重启、拔盘、拔线、更换或修改配置。",
+      "output": ["purpose", "method", "permission", "expected_effects"],
+      "forbidden": ["write_action", "operation_authorization"]
+    },
+    "communication": {
+      "version": "communication-v1.0.0",
+      "purpose": "将已校验调查结果转换为角色化沟通文本",
+      "instructions": "不得添加输入中不存在的事实、设备位置、业务状态或操作许可。",
+      "output": ["system_team", "network_team", "onsite", "interface_person"],
+      "forbidden": ["new_fact", "permission_override"]
+    }
+  }
+}

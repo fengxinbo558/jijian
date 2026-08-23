@@ -7,6 +7,7 @@ import os
 import re
 import urllib.error
 import urllib.request
+from pathlib import Path
 from typing import Any, Dict, Mapping, Optional
 
 from .models import NormalizedInput, RuleAnalysis
@@ -20,34 +21,73 @@ class AIEnricher:
         self.api_key = os.getenv("IDCAI_API_KEY", "").strip()
         self.allow_external = os.getenv("IDCAI_ALLOW_EXTERNAL", "0").strip() == "1"
         self.timeout = float(os.getenv("IDCAI_MODEL_TIMEOUT", "12"))
+        contract_path = Path(__file__).resolve().parent.parent / "prompts" / "contracts.json"
+        try:
+            contracts = json.loads(contract_path.read_text(encoding="utf-8"))
+            self.hypothesis_contract = contracts["contracts"]["hypothesis"]
+        except (OSError, KeyError, TypeError, json.JSONDecodeError):
+            self.hypothesis_contract = {
+                "version": "hypothesis-v1.0.0",
+                "instructions": "只依据证据形成候选，不得猜测身份或操作许可。",
+            }
 
     @property
     def enabled(self) -> bool:
         return bool(self.allow_external and self.url and self.model)
 
     def enrich(
-        self, event: NormalizedInput, analysis: RuleAnalysis
+        self,
+        event: NormalizedInput,
+        analysis: RuleAnalysis,
+        investigation: Optional[Mapping[str, Any]] = None,
     ) -> Optional[Dict[str, Any]]:
         if not self.enabled:
             return None
         redacted, _counts = redact_text(event.raw_text)
         safe_summary, _summary_counts = redact_text(event.summary)
-        evidence_ids = {item["id"] for item in analysis.evidence}
-        safe_analysis = analysis.to_dict()
-        for evidence in safe_analysis.get("evidence", []):
-            evidence["text"], _evidence_counts = redact_text(str(evidence.get("text", "")))
+        investigation = investigation or {}
+        source_evidence = investigation.get("evidence", analysis.evidence)
+        evidence_ids = {str(item["id"]) for item in source_evidence if item.get("id")}
+        safe_evidence = []
+        for evidence in source_evidence:
+            text, _evidence_counts = redact_text(str(evidence.get("text", "")))
+            safe_evidence.append({"id": str(evidence.get("id", "")), "text": text[:1000]})
+        safe_facts = []
+        for fact in investigation.get("extracted_facts", []):
+            value, _value_counts = redact_text(str(fact.get("value", "")))
+            excerpt, _excerpt_counts = redact_text(str(fact.get("excerpt", "")))
+            safe_facts.append(
+                {
+                    "id": str(fact.get("id", "")),
+                    "type": str(fact.get("type", "")),
+                    "value": value[:200],
+                    "excerpt": excerpt[:500],
+                    "evidence_ids": list(fact.get("evidence_ids", [])),
+                }
+            )
         package = {
-            "site": event.site,
-            "device": event.device.to_dict(),
             "summary": safe_summary,
             "redacted_log_excerpt": redacted[:8000],
-            "rule_analysis": safe_analysis,
+            "evidence": safe_evidence,
+            "facts": safe_facts,
+            "knowledge_cards": [
+                {
+                    "id": card.get("id"),
+                    "version": card.get("version"),
+                    "title": card.get("title"),
+                    "prohibited_inferences": card.get("prohibited_inferences", []),
+                    "stop_conditions": card.get("stop_conditions", []),
+                }
+                for card in investigation.get("knowledge_retrieval", {}).get("cards", [])[:8]
+            ],
+            "baseline_hypotheses": investigation.get("hypotheses", [])[:8],
         }
         prompt = (
-            "你是私有化IDC故障调查员。只依据提供的证据输出JSON，不得猜测设备身份、"
-            "机架位、电源许可或根因。JSON字段仅允许 impact_summary、candidate_causes、"
-            "suggestions、missing_information。candidate_causes每项必须含title、confidence、"
-            "evidence_ids、counter_evidence、status；evidence_ids只能引用现有ID。\n\n"
+            f"提示词契约：{self.hypothesis_contract.get('version')}。"
+            f"{self.hypothesis_contract.get('instructions')}"
+            "只输出JSON，字段仅允许 impact_summary、candidate_causes、missing_information。"
+            "candidate_causes每项必须含title、evidence_ids、counter_evidence、status；"
+            "status只能是candidate或high_likelihood；evidence_ids只能引用现有ID。\n\n"
             + json.dumps(package, ensure_ascii=False)
         )
         request_body = {
@@ -99,7 +139,7 @@ class AIEnricher:
         result: Dict[str, Any] = {}
         if isinstance(value.get("impact_summary"), str):
             result["impact_summary"] = value["impact_summary"][:600]
-        for key in ("suggestions", "missing_information"):
+        for key in ("missing_information",):
             items = value.get(key)
             if isinstance(items, list):
                 result[key] = [str(item)[:400] for item in items[:8]]
@@ -114,16 +154,17 @@ class AIEnricher:
                     for reference in item.get("evidence_ids", [])
                     if str(reference) in evidence_ids
                 ]
-                confidence = float(item.get("confidence", 0.2))
                 if not references:
-                    confidence = min(confidence, 0.35)
+                    continue
+                status = str(item.get("status", "candidate"))
+                if status not in {"candidate", "high_likelihood"}:
+                    status = "candidate"
                 candidates.append(
                     {
                         "title": str(item.get("title", "待确认原因"))[:300],
-                        "confidence": max(0.0, min(confidence, 1.0)),
                         "evidence_ids": references,
                         "counter_evidence": str(item.get("counter_evidence", "未提供"))[:500],
-                        "status": "候选" if references else "待确认",
+                        "status": status,
                     }
                 )
         if candidates:

@@ -7,6 +7,7 @@ import sqlite3
 from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional
 
+from .investigation import legacy_investigation
 from .models import NormalizedInput, utc_now
 
 
@@ -14,6 +15,7 @@ JSON_COLUMNS = {
     "devices_json": "devices",
     "evidence_json": "evidence",
     "analysis_json": "analysis",
+    "investigation_json": "investigation",
     "onsite_card_json": "onsite_card",
     "cc_reminder_json": "cc_reminder",
 }
@@ -95,14 +97,24 @@ class IncidentStore:
                 );
                 """
             )
+            columns = {
+                str(row["name"])
+                for row in connection.execute("PRAGMA table_info(incidents)").fetchall()
+            }
+            if "investigation_json" not in columns:
+                connection.execute(
+                    "ALTER TABLE incidents ADD COLUMN investigation_json TEXT NOT NULL DEFAULT '{}'"
+                )
 
     @staticmethod
     def _decode(row: sqlite3.Row) -> Dict[str, Any]:
         result = dict(row)
         for raw_name, public_name in JSON_COLUMNS.items():
             fallback: Any = [] if public_name in {"devices", "evidence"} else {}
-            result[public_name] = _load(result.pop(raw_name), fallback)
+            result[public_name] = _load(result.pop(raw_name, ""), fallback)
         result["affected_count"] = len(result["devices"])
+        if not result["investigation"]:
+            result["investigation"] = legacy_investigation(result)
         return result
 
     def list_incidents(self, limit: int = 100) -> List[Dict[str, Any]]:
@@ -199,9 +211,9 @@ class IncidentStore:
                 INSERT INTO incidents (
                     id, title, status, severity, category, site, summary,
                     correlation_key, identity_keys, devices_json, evidence_json,
-                    analysis_json, onsite_card_json, cc_reminder_json,
+                    analysis_json, investigation_json, onsite_card_json, cc_reminder_json,
                     communication_text, created_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     incident["id"],
@@ -216,6 +228,7 @@ class IncidentStore:
                     _dump(incident["devices"]),
                     _dump(incident["evidence"]),
                     _dump(incident["analysis"]),
+                    _dump(incident["investigation"]),
                     _dump(incident["onsite_card"]),
                     _dump(incident["cc_reminder"]),
                     incident["communication_text"],
@@ -225,6 +238,7 @@ class IncidentStore:
             )
             self._insert_input(connection, incident["id"], event)
             self._audit(connection, incident["id"], "incident_created", {"source": event.source})
+            self._audit_investigation(connection, incident["id"], incident["investigation"])
         result = self.get_incident(str(incident["id"]))
         assert result is not None
         return result
@@ -241,7 +255,7 @@ class IncidentStore:
                 UPDATE incidents SET
                     title = ?, severity = ?, summary = ?, identity_keys = ?,
                     devices_json = ?, evidence_json = ?, analysis_json = ?,
-                    onsite_card_json = ?, cc_reminder_json = ?, communication_text = ?,
+                    investigation_json = ?, onsite_card_json = ?, cc_reminder_json = ?, communication_text = ?,
                     updated_at = ?
                 WHERE id = ?
                 """,
@@ -253,6 +267,7 @@ class IncidentStore:
                     _dump(update["devices"]),
                     _dump(update["evidence"]),
                     _dump(update["analysis"]),
+                    _dump(update["investigation"]),
                     _dump(update["onsite_card"]),
                     _dump(update["cc_reminder"]),
                     update["communication_text"],
@@ -262,6 +277,7 @@ class IncidentStore:
             )
             self._insert_input(connection, incident_id, event)
             self._audit(connection, incident_id, "evidence_merged", {"source": event.source})
+            self._audit_investigation(connection, incident_id, update["investigation"])
         result = self.get_incident(incident_id)
         assert result is not None
         return result
@@ -300,6 +316,24 @@ class IncidentStore:
         )
 
     @staticmethod
+    def _audit_investigation(
+        connection: sqlite3.Connection,
+        incident_id: str,
+        investigation: Mapping[str, Any],
+    ) -> None:
+        actions = (
+            ("input_received", {"input_count": len(investigation.get("intake", []))}),
+            ("fields_normalized", {"field_count": len(investigation.get("field_provenance", []))}),
+            ("facts_extracted", {"fact_count": len(investigation.get("extracted_facts", []))}),
+            ("rules_matched", {"rule_count": len(investigation.get("rule_matches", []))}),
+            ("correlation_evaluated", dict(investigation.get("correlation", {}))),
+            ("hypotheses_generated", {"hypothesis_count": len(investigation.get("hypotheses", []))}),
+            ("conclusion_updated", dict(investigation.get("conclusion", {}))),
+        )
+        for action, details in actions:
+            IncidentStore._audit(connection, incident_id, action, details)
+
+    @staticmethod
     def _audit(
         connection: sqlite3.Connection,
         incident_id: str,
@@ -313,4 +347,3 @@ class IncidentStore:
             """,
             (incident_id, action, _dump(details), utc_now()),
         )
-

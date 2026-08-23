@@ -29,7 +29,12 @@
         "cc_required": false,
         "gate": "confirm",
         "sn_exact": "6CU318Z4K20260823001",
-        "evidence_contains": "I/O error"
+        "evidence_contains": "I/O error",
+        "investigation_mode": "rules_only",
+        "fact_types_contains": ["block_io_error", "smart_failure"],
+        "knowledge_card_contains": "STORAGE-IO-001",
+        "no_confidence": true,
+        "conclusion_not_confirmed": true
       }
     },
     {
@@ -54,7 +59,10 @@
         "category": "system",
         "requires_onsite": false,
         "cc_required": false,
-        "candidate_contains": "进程内存"
+        "candidate_contains": "进程内存",
+        "fact_types_contains": ["oom_kill"],
+        "knowledge_card_contains": "MEMORY-OOM-013",
+        "conclusion_not_confirmed": true
       }
     },
     {
@@ -130,7 +138,10 @@
         "requires_onsite": true,
         "gate": "stop",
         "candidate_contains": "线缆/光纤",
-        "suggestion_contains": "光功率"
+        "suggestion_contains": "光功率",
+        "fact_types_contains": ["link_down", "optical_power"],
+        "knowledge_card_contains": "NETWORK-LINK-016",
+        "no_confidence": true
       }
     },
     {
@@ -155,7 +166,10 @@
         "category": "application",
         "requires_onsite": false,
         "cc_required": false,
-        "candidate_contains": "端口"
+        "candidate_contains": "端口",
+        "fact_types_contains": ["port_conflict"],
+        "knowledge_card_contains": "APP-PORT-036",
+        "next_step_contains": "监听端口"
       }
     },
     {
@@ -199,7 +213,9 @@
         "requires_onsite": true,
         "incident_count": 1,
         "input_count": 2,
-        "candidate_contains": "主板"
+        "candidate_contains": "主板",
+        "correlation_level": "explicit",
+        "conclusion_not_confirmed": true
       }
     },
     {
@@ -260,7 +276,8 @@
         "incident_count": 1,
         "affected_count": 2,
         "input_count": 2,
-        "cc_required": false
+        "cc_required": false,
+        "correlation_level": "explicit"
       }
     },
     {
@@ -348,10 +365,11 @@
         "category": "unknown",
         "requires_onsite": true,
         "gate": "confirm",
-        "candidate_status": "待确认",
-        "max_confidence": 0.35
+        "candidate_status": "candidate",
+        "knowledge_coverage": "insufficient",
+        "no_confidence": true,
+        "conclusion_not_confirmed": true
       }
     }
   ]
 }
-
