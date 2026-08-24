@@ -113,6 +113,177 @@ class IncidentStore:
                     current_json TEXT NOT NULL,
                     changed_at TEXT NOT NULL
                 );
+
+                CREATE TABLE IF NOT EXISTS schema_migrations (
+                    version INTEGER PRIMARY KEY,
+                    name TEXT NOT NULL,
+                    applied_at TEXT NOT NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS record_annotations (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    record_type TEXT NOT NULL,
+                    record_id TEXT NOT NULL,
+                    note TEXT NOT NULL,
+                    created_by TEXT NOT NULL,
+                    created_at TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_annotations_record
+                    ON record_annotations(record_type, record_id, created_at DESC);
+
+                CREATE TABLE IF NOT EXISTS knowledge_sources (
+                    source_key TEXT PRIMARY KEY,
+                    content_json TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS knowledge_cards (
+                    card_id TEXT PRIMARY KEY,
+                    domain TEXT NOT NULL,
+                    title TEXT NOT NULL,
+                    lifecycle_status TEXT NOT NULL,
+                    published_version TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_knowledge_cards_domain
+                    ON knowledge_cards(domain, lifecycle_status, updated_at DESC);
+
+                CREATE TABLE IF NOT EXISTS knowledge_versions (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    card_id TEXT NOT NULL,
+                    version TEXT NOT NULL,
+                    release_status TEXT NOT NULL,
+                    content_json TEXT NOT NULL,
+                    created_by TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    published_at TEXT NOT NULL,
+                    FOREIGN KEY(card_id) REFERENCES knowledge_cards(card_id),
+                    UNIQUE(card_id, version)
+                );
+
+                CREATE TABLE IF NOT EXISTS prompt_definitions (
+                    prompt_key TEXT PRIMARY KEY,
+                    name TEXT NOT NULL,
+                    purpose TEXT NOT NULL,
+                    lifecycle_status TEXT NOT NULL,
+                    published_version TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS prompt_versions (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    prompt_key TEXT NOT NULL,
+                    version TEXT NOT NULL,
+                    release_status TEXT NOT NULL,
+                    system_content TEXT NOT NULL,
+                    user_template TEXT NOT NULL,
+                    variables_json TEXT NOT NULL,
+                    output_schema_json TEXT NOT NULL,
+                    settings_json TEXT NOT NULL,
+                    content_json TEXT NOT NULL,
+                    created_by TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    published_at TEXT NOT NULL,
+                    FOREIGN KEY(prompt_key) REFERENCES prompt_definitions(prompt_key),
+                    UNIQUE(prompt_key, version)
+                );
+
+                CREATE TABLE IF NOT EXISTS release_runs (
+                    id TEXT PRIMARY KEY,
+                    asset_type TEXT NOT NULL,
+                    asset_key TEXT NOT NULL,
+                    version TEXT NOT NULL,
+                    environment TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    test_summary_json TEXT NOT NULL,
+                    diff_json TEXT NOT NULL,
+                    requested_by TEXT NOT NULL,
+                    approved_by TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS evaluation_runs (
+                    id TEXT PRIMARY KEY,
+                    release_id TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    summary_json TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    completed_at TEXT NOT NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS evaluation_results (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    run_id TEXT NOT NULL,
+                    case_id TEXT NOT NULL,
+                    passed INTEGER NOT NULL,
+                    details_json TEXT NOT NULL,
+                    FOREIGN KEY(run_id) REFERENCES evaluation_runs(id)
+                );
+
+                CREATE TABLE IF NOT EXISTS model_providers (
+                    provider_key TEXT PRIMARY KEY,
+                    display_name TEXT NOT NULL,
+                    provider_type TEXT NOT NULL,
+                    enabled INTEGER NOT NULL,
+                    config_json TEXT NOT NULL,
+                    secret_configured INTEGER NOT NULL,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS model_policies (
+                    policy_key TEXT PRIMARY KEY,
+                    provider_key TEXT NOT NULL,
+                    task_type TEXT NOT NULL,
+                    data_policy_json TEXT NOT NULL,
+                    fallback_json TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    FOREIGN KEY(provider_key) REFERENCES model_providers(provider_key)
+                );
+
+                CREATE TABLE IF NOT EXISTS rag_runs (
+                    id TEXT PRIMARY KEY,
+                    incident_id TEXT NOT NULL,
+                    mode TEXT NOT NULL,
+                    knowledge_version TEXT NOT NULL,
+                    prompt_version TEXT NOT NULL,
+                    model_provider TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    completed_at TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_rag_runs_incident
+                    ON rag_runs(incident_id, created_at DESC);
+
+                CREATE TABLE IF NOT EXISTS rag_steps (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    run_id TEXT NOT NULL,
+                    step_order INTEGER NOT NULL,
+                    step_type TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    input_json TEXT NOT NULL,
+                    output_json TEXT NOT NULL,
+                    message TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    FOREIGN KEY(run_id) REFERENCES rag_runs(id),
+                    UNIQUE(run_id, step_order)
+                );
+
+                CREATE TABLE IF NOT EXISTS rag_hits (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    run_id TEXT NOT NULL,
+                    card_id TEXT NOT NULL,
+                    card_version TEXT NOT NULL,
+                    rank INTEGER NOT NULL,
+                    score REAL NOT NULL,
+                    reasons_json TEXT NOT NULL,
+                    retrieval_json TEXT NOT NULL,
+                    FOREIGN KEY(run_id) REFERENCES rag_runs(id)
+                );
                 """
             )
             columns = {
@@ -123,6 +294,13 @@ class IncidentStore:
                 connection.execute(
                     "ALTER TABLE incidents ADD COLUMN investigation_json TEXT NOT NULL DEFAULT '{}'"
                 )
+            connection.execute(
+                """
+                INSERT OR IGNORE INTO schema_migrations (version, name, applied_at)
+                VALUES (1, 'data_ai_assets_foundation', ?)
+                """,
+                (utc_now(),),
+            )
 
     def list_facility_profiles(self) -> List[Dict[str, Any]]:
         with self.connect() as connection:

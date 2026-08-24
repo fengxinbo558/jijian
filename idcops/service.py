@@ -8,6 +8,7 @@ import uuid
 from typing import Any, Dict, Iterable, List, Mapping, Optional
 
 from .ai import AIEnricher
+from .assets import AssetRegistry
 from .facility import assess_facility_event, strongest_assessment
 from .investigation import apply_model_enrichment, build_investigation, merge_investigations
 from .integrations import IntegrationHub
@@ -127,6 +128,8 @@ class IncidentService:
         integrations: Optional[IntegrationHub] = None,
     ) -> None:
         self.store = store
+        self.assets = AssetRegistry(store)
+        self.assets.ensure_seeded()
         self.ai = ai or AIEnricher()
         self.knowledge = knowledge or KnowledgeBase()
         self.integrations = integrations or IntegrationHub()
