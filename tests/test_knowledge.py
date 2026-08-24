@@ -32,6 +32,16 @@ class KnowledgeBaseTests(unittest.TestCase):
         self.assertNotIn("NETWORK-TOR-022", identifiers)
         self.assertTrue(all(item["reasons"] for item in results))
 
+    def test_local_vector_similarity_does_not_override_exact_port_fact(self):
+        results = self.knowledge.search(
+            rule_names=["application_runtime"],
+            fact_types=["service_failed", "port_conflict"],
+            text="Failed to start; Address already in use: bind 0.0.0.0:8080",
+            device_type="server",
+        )
+        identifiers = [item["card"]["id"] for item in results]
+        self.assertLess(identifiers.index("APP-PORT-036"), identifiers.index("SYSTEM-SERVICE-030"))
+
 
 if __name__ == "__main__":
     unittest.main()

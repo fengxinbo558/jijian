@@ -232,7 +232,11 @@ class KnowledgeBase:
                 score += 1
             if vector_similarity >= 0.12:
                 reasons.append(f"本地特征向量相似：{vector_similarity:.2f}")
-                score += max(1, int(vector_similarity * 10))
+                # Exact facts and terms are stronger evidence than the local feature vector.
+                # The vector branch may surface otherwise missed cards, but must not reorder
+                # two deterministic matches into a less specific next action.
+                if not matched_facts and not matched_terms:
+                    score += max(1, int(vector_similarity * 10))
             found.append(
                 {
                     "card": dict(card),
