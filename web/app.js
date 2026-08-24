@@ -6,6 +6,19 @@ const state = {
   facilities: [],
   filter: "all",
   query: "",
+  role: localStorage.getItem("idcai-role") || "ai_admin",
+  admin: {
+    tab: "database",
+    summary: null,
+    knowledge: [],
+    prompts: [],
+    releases: [],
+    ragRuns: [],
+    selectedKnowledge: null,
+    selectedPrompt: null,
+    selectedRagRun: null,
+    pendingPublishId: null,
+  },
 };
 
 const labels = {
@@ -44,6 +57,8 @@ const ingestDialog = document.querySelector("#ingestDialog");
 const demoDialog = document.querySelector("#demoDialog");
 const sourceDialog = document.querySelector("#sourceDialog");
 const facilityDialog = document.querySelector("#facilityDialog");
+const adminDialog = document.querySelector("#adminDialog");
+const publishConfirmDialog = document.querySelector("#publishConfirmDialog");
 
 function escapeHtml(value) {
   return String(value ?? "")
@@ -73,8 +88,13 @@ function translated(group, value) {
 
 async function api(path, options = {}) {
   const response = await fetch(path, {
-    headers: { "Content-Type": "application/json", ...(options.headers || {}) },
     ...options,
+    headers: {
+      "Content-Type": "application/json",
+      "X-IDCAI-Role": state.role,
+      "X-IDCAI-User": "local-admin",
+      ...(options.headers || {}),
+    },
   });
   let payload = {};
   try {
@@ -742,6 +762,363 @@ async function runDemo(demoId, button) {
   }
 }
 
+const roleNames = {
+  onsite_operator: "现场人员",
+  facility_lead: "机房组长",
+  interface_engineer: "系统/网络接口人",
+  ai_admin: "AI 管理员",
+};
+
+const ragStepNames = {
+  raw_input: "保存原始输入",
+  facts: "提取可回溯事实",
+  retrieval_query: "生成检索条件",
+  retrieval_hits: "召回经验知识",
+  model_input: "组织模型输入",
+  model_output: "接收模型输出",
+  validation: "执行硬规则校验",
+  final_result: "形成最终结果",
+};
+
+function jsonText(value) {
+  return JSON.stringify(value ?? {}, null, 2);
+}
+
+function setRole(role) {
+  state.role = roleNames[role] ? role : "onsite_operator";
+  localStorage.setItem("idcai-role", state.role);
+  document.body.dataset.role = state.role;
+  document.querySelector("#roleSelect").value = state.role;
+  const adminButton = document.querySelector("#adminRailButton");
+  const isAdmin = state.role === "ai_admin";
+  adminButton.classList.toggle("is-locked", !isAdmin);
+  adminButton.setAttribute("aria-description", isAdmin ? "打开数据与 AI 管理" : "仅 AI 管理员可以打开");
+  showToast(`已切换到${roleNames[state.role]}工作台`);
+}
+
+function adminSummaryCard(label, value, note) {
+  return `<article><small>${escapeHtml(label)}</small><strong>${escapeHtml(value)}</strong><span>${escapeHtml(note)}</span></article>`;
+}
+
+function renderAdminSummary(summary = {}) {
+  const knowledge = summary.knowledge || {};
+  const prompts = summary.prompts || {};
+  document.querySelector("#adminSummary").innerHTML = [
+    adminSummaryCard("故障事件", summary.incidents || 0, `${summary.event_inputs || 0} 条原始输入`),
+    adminSummaryCard("经验知识", knowledge.published || 0, "已发布并参与检索"),
+    adminSummaryCard("提示词", prompts.published || 0, "线上版本"),
+    adminSummaryCard("分析链路", summary.rag_runs || 0, "每次均可回放"),
+    adminSummaryCard("审计记录", summary.audit_records || 0, "只追加、不覆盖"),
+  ].join("");
+}
+
+async function loadAdminSummary() {
+  state.admin.summary = await api("/api/admin/summary");
+  renderAdminSummary(state.admin.summary);
+}
+
+function activateAdminTab(name) {
+  state.admin.tab = name;
+  document.querySelectorAll("[data-admin-tab]").forEach((button) => {
+    const active = button.dataset.adminTab === name;
+    button.classList.toggle("is-active", active);
+    button.setAttribute("aria-current", active ? "page" : "false");
+  });
+  document.querySelectorAll("[data-admin-panel]").forEach((panel) => {
+    panel.classList.toggle("is-active", panel.dataset.adminPanel === name);
+  });
+  if (name === "database") loadAdminRecords().catch((error) => showToast(error.message, true));
+  if (name === "knowledge") loadKnowledge().catch((error) => showToast(error.message, true));
+  if (name === "prompts") loadPrompts().catch((error) => showToast(error.message, true));
+  if (name === "rag") loadRagRuns().catch((error) => showToast(error.message, true));
+  if (name === "releases") loadReleases().catch((error) => showToast(error.message, true));
+}
+
+async function openAdmin() {
+  if (state.role !== "ai_admin") {
+    showToast(`当前是${roleNames[state.role]}工作台，只有 AI 管理员能修改数据与 AI 资产`, true);
+    return;
+  }
+  openDialog(adminDialog);
+  try {
+    await loadAdminSummary();
+    activateAdminTab(state.admin.tab);
+  } catch (error) {
+    showToast(error.message, true);
+  }
+}
+
+function recordIdentity(record, index) {
+  return record.id || record.site || record.card_id || record.prompt_key || `记录 ${index + 1}`;
+}
+
+function renderAdminRecords(items = [], recordType = "incidents") {
+  const target = document.querySelector("#recordBrowser");
+  if (!items.length) {
+    target.innerHTML = `<div class="admin-empty">这个范围内还没有数据。先接入一条真实日志或运行一个模拟案例。</div>`;
+    return;
+  }
+  target.innerHTML = items.map((item, index) => {
+    const identity = recordIdentity(item, index);
+    const summary = item.title || item.action || item.display_name || item.source || item.summary || "展开查看完整记录";
+    return `<details class="record-row">
+      <summary><span>${escapeHtml(identity)}</span><strong>${escapeHtml(summary)}</strong><time>${escapeHtml(formatTime(item.updated_at || item.created_at || item.event_time))}</time></summary>
+      <pre>${escapeHtml(jsonText(item))}</pre>
+      <form class="annotation-form" data-record-type="${escapeHtml(recordType)}" data-record-id="${escapeHtml(identity)}">
+        <label>追加备注<input name="note" required placeholder="补充来源、核对结论或说明，不会改写原记录"></label>
+        <button class="secondary-button" type="submit">保存备注</button>
+      </form>
+    </details>`;
+  }).join("");
+}
+
+async function loadAdminRecords() {
+  const type = document.querySelector("#recordTypeSelect").value;
+  const query = document.querySelector("#recordSearch").value.trim();
+  const payload = await api(`/api/admin/records?type=${encodeURIComponent(type)}&q=${encodeURIComponent(query)}&limit=100`);
+  renderAdminRecords(payload.items || [], type);
+}
+
+async function saveAnnotation(form) {
+  const note = new FormData(form).get("note");
+  await api("/api/admin/annotations", {
+    method: "POST",
+    body: JSON.stringify({ record_type: form.dataset.recordType, record_id: form.dataset.recordId, note }),
+  });
+  form.reset();
+  showToast("备注已追加，原始记录没有被覆盖");
+  await loadAdminSummary();
+}
+
+function renderKnowledgeList() {
+  const search = document.querySelector("#knowledgeSearch").value.trim().toLowerCase();
+  const items = state.admin.knowledge.filter((item) => !search || `${item.card_id} ${item.domain} ${item.title}`.toLowerCase().includes(search));
+  document.querySelector("#knowledgeList").innerHTML = items.length ? items.map((item) => `
+    <button class="asset-row ${state.admin.selectedKnowledge === item.card_id ? "is-selected" : ""}" data-knowledge-id="${escapeHtml(item.card_id)}" type="button">
+      <small>${escapeHtml(item.domain)} · ${escapeHtml(item.published_version || "未发布")}</small>
+      <strong>${escapeHtml(item.title)}</strong>
+      <span>${escapeHtml(item.card_id)}</span>
+    </button>`).join("") : `<div class="admin-empty">没有匹配的经验。</div>`;
+}
+
+async function loadKnowledge() {
+  const payload = await api("/api/admin/knowledge");
+  state.admin.knowledge = payload.items || [];
+  renderKnowledgeList();
+  if (!state.admin.selectedKnowledge && state.admin.knowledge[0]) await selectKnowledge(state.admin.knowledge[0].card_id);
+}
+
+async function selectKnowledge(cardId) {
+  state.admin.selectedKnowledge = cardId;
+  renderKnowledgeList();
+  const card = await api(`/api/admin/knowledge/${encodeURIComponent(cardId)}`);
+  const latest = card.versions?.[0] || {};
+  const published = card.versions?.find((version) => version.version === card.published_version) || latest;
+  document.querySelector("#knowledgeDetail").innerHTML = `
+    <header class="asset-detail-head"><div><small>${escapeHtml(card.domain)} · ${escapeHtml(card.card_id)}</small><h3>${escapeHtml(card.title)}</h3></div><span class="version-chip">线上 ${escapeHtml(card.published_version || "无")}</span></header>
+    <details class="raw-asset" open><summary>查看当前线上知识原文</summary><pre>${escapeHtml(jsonText(published.content || {}))}</pre></details>
+    <details class="raw-asset"><summary>查看全部版本（${card.versions?.length || 0}）</summary>
+      <div class="version-list">${(card.versions || []).map((version) => `<div><strong>${escapeHtml(version.version)}</strong><span>${escapeHtml(version.release_status)}</span><time>${escapeHtml(formatTime(version.created_at))}</time>${version.release_status === "draft" ? `<button class="secondary-button" data-action="test-asset" data-asset-type="knowledge" data-asset-key="${escapeHtml(card.card_id)}" data-version="${escapeHtml(version.version)}" type="button">运行发布测试</button>` : ""}</div>`).join("")}</div>
+    </details>
+    <form class="asset-editor" id="knowledgeDraftForm" data-card-id="${escapeHtml(card.card_id)}">
+      <div class="editor-heading"><div><h4>基于当前内容创建草稿</h4><p>草稿不会立即参与分析。</p></div></div>
+      <label>新版本号<input name="version" required value="${escapeHtml(`${card.card_id}-draft-${Date.now().toString().slice(-6)}`)}"></label>
+      <label>知识内容（JSON）<textarea name="content" rows="16" required spellcheck="false">${escapeHtml(jsonText({ ...(latest.content || {}), version: "" }))}</textarea></label>
+      <footer class="editor-actions"><button class="primary-button" type="submit">保存知识草稿</button></footer>
+    </form>`;
+}
+
+async function createKnowledgeDraft(form) {
+  const data = new FormData(form);
+  const version = String(data.get("version") || "").trim();
+  const content = JSON.parse(String(data.get("content") || "{}"));
+  content.version = version;
+  const created = await api(`/api/admin/knowledge/${encodeURIComponent(form.dataset.cardId)}/versions`, {
+    method: "POST",
+    body: JSON.stringify({ version, content }),
+  });
+  showToast(`知识草稿 ${created.version} 已保存，尚未上线`);
+  await selectKnowledge(form.dataset.cardId);
+  await loadAdminSummary();
+}
+
+function renderPromptList() {
+  document.querySelector("#promptList").innerHTML = state.admin.prompts.map((item) => `
+    <button class="asset-row ${state.admin.selectedPrompt === item.prompt_key ? "is-selected" : ""}" data-prompt-key="${escapeHtml(item.prompt_key)}" type="button">
+      <small>线上 ${escapeHtml(item.published_version || "未发布")}</small>
+      <strong>${escapeHtml(item.name)}</strong>
+      <span>${escapeHtml(item.purpose || item.prompt_key)}</span>
+    </button>`).join("");
+}
+
+async function loadPrompts() {
+  const payload = await api("/api/admin/prompts");
+  state.admin.prompts = payload.items || [];
+  renderPromptList();
+  if (!state.admin.selectedPrompt && state.admin.prompts[0]) await selectPrompt(state.admin.prompts[0].prompt_key);
+}
+
+async function selectPrompt(promptKey) {
+  state.admin.selectedPrompt = promptKey;
+  renderPromptList();
+  const prompt = await api(`/api/admin/prompts/${encodeURIComponent(promptKey)}`);
+  const published = prompt.versions?.find((version) => version.version === prompt.published_version) || prompt.versions?.[0] || {};
+  const draftVersion = `${promptKey}-v${new Date().toISOString().replace(/[-:TZ.]/g, "").slice(2, 14)}`;
+  document.querySelector("#promptDetail").innerHTML = `
+    <header class="asset-detail-head"><div><small>${escapeHtml(prompt.prompt_key)}</small><h3>${escapeHtml(prompt.name)}</h3><p>${escapeHtml(prompt.purpose)}</p></div><span class="version-chip">线上 ${escapeHtml(prompt.published_version)}</span></header>
+    <div class="prompt-raw-grid">
+      <section><small>SYSTEM 提示词</small><pre>${escapeHtml(published.system_content || "（空）")}</pre></section>
+      <section><small>用户提示词模板</small><pre>${escapeHtml(published.user_template || "（空）")}</pre></section>
+    </div>
+    <details class="raw-asset"><summary>变量、输出格式和模型参数</summary><pre>${escapeHtml(jsonText({ variables: published.variables, output_schema: published.output_schema, settings: published.settings }))}</pre></details>
+    <details class="raw-asset"><summary>查看全部版本（${prompt.versions?.length || 0}）</summary>
+      <div class="version-list">${(prompt.versions || []).map((version) => `<div><strong>${escapeHtml(version.version)}</strong><span>${escapeHtml(version.release_status)}</span><time>${escapeHtml(formatTime(version.created_at))}</time>${version.release_status === "draft" ? `<button class="secondary-button" data-action="test-asset" data-asset-type="prompt" data-asset-key="${escapeHtml(promptKey)}" data-version="${escapeHtml(version.version)}" type="button">运行发布测试</button>` : ""}</div>`).join("")}</div>
+    </details>
+    <form class="asset-editor" id="promptDraftForm" data-prompt-key="${escapeHtml(promptKey)}">
+      <div class="editor-heading"><div><h4>编辑为新草稿</h4><p>保存后先预览、再测试，最后才可上线。</p></div></div>
+      <label>新版本号<input name="version" required value="${escapeHtml(draftVersion)}"></label>
+      <label>System 提示词<textarea name="system_content" rows="5" spellcheck="false">${escapeHtml(published.system_content || "")}</textarea></label>
+      <label>用户提示词模板<textarea name="user_template" rows="11" required spellcheck="false">${escapeHtml(published.user_template || "")}</textarea></label>
+      <div class="editor-grid">
+        <label>变量（JSON 数组）<textarea name="variables" rows="5" spellcheck="false">${escapeHtml(jsonText(published.variables || []))}</textarea></label>
+        <label>输出格式（JSON）<textarea name="output_schema" rows="5" spellcheck="false">${escapeHtml(jsonText(published.output_schema || []))}</textarea></label>
+        <label>模型参数（JSON）<textarea name="settings" rows="5" spellcheck="false">${escapeHtml(jsonText(published.settings || {}))}</textarea></label>
+      </div>
+      <footer class="editor-actions"><button class="primary-button" type="submit">保存提示词草稿</button></footer>
+    </form>
+    <div id="promptDraftStatus" class="draft-status" aria-live="polite"></div>`;
+}
+
+async function createPromptDraft(form) {
+  const data = new FormData(form);
+  const payload = {
+    version: String(data.get("version") || "").trim(),
+    system_content: String(data.get("system_content") || ""),
+    user_template: String(data.get("user_template") || ""),
+    variables: JSON.parse(String(data.get("variables") || "[]")),
+    output_schema: JSON.parse(String(data.get("output_schema") || "[]")),
+    settings: JSON.parse(String(data.get("settings") || "{}")),
+  };
+  const promptKey = form.dataset.promptKey;
+  const created = await api(`/api/admin/prompts/${encodeURIComponent(promptKey)}/versions`, { method: "POST", body: JSON.stringify(payload) });
+  document.querySelector("#promptDraftStatus").innerHTML = `
+    <div class="draft-ready"><div><strong>草稿 ${escapeHtml(created.version)} 已保存</strong><span>尚未影响线上分析。先检查渲染结果，再运行发布测试。</span></div>
+      <button class="secondary-button" data-action="preview-prompt" data-prompt-key="${escapeHtml(promptKey)}" data-version="${escapeHtml(created.version)}" type="button">预览实际提示词</button>
+      <button class="primary-button" data-action="test-asset" data-asset-type="prompt" data-asset-key="${escapeHtml(promptKey)}" data-version="${escapeHtml(created.version)}" type="button">运行发布测试</button>
+    </div>`;
+  showToast(`草稿 ${created.version} 已保存`);
+}
+
+async function previewPrompt(button) {
+  const values = {
+    event_summary: "示例：NVMe I/O timeout，完整SN为 TEST-SN-001",
+    redacted_log_excerpt: "nvme0: I/O timeout",
+    evidence: ["E-01"],
+    facts: ["nvme0 发生 I/O timeout"],
+    knowledge_cards: ["KB-STORAGE-001"],
+    baseline_hypotheses: ["链路或介质异常，待验证"],
+  };
+  const preview = await api(`/api/admin/prompts/${encodeURIComponent(button.dataset.promptKey)}/preview`, {
+    method: "POST",
+    body: JSON.stringify({ version: button.dataset.version, variables: values }),
+  });
+  document.querySelector("#promptDraftStatus").insertAdjacentHTML("beforeend", `
+    <details class="prompt-preview" open><summary>这次测试会发送给模型的内容</summary><pre>${escapeHtml(jsonText(preview))}</pre></details>`);
+}
+
+async function testAsset(button) {
+  const release = await api("/api/admin/releases/test", {
+    method: "POST",
+    body: JSON.stringify({ asset_type: button.dataset.assetType, asset_key: button.dataset.assetKey, version: button.dataset.version }),
+  });
+  showToast(`版本 ${release.version} 已通过发布前检查`);
+  await loadReleases();
+  activateAdminTab("releases");
+}
+
+function releaseStatusName(status) {
+  return { tested: "测试通过", prepared: "等待最终确认", published: "已上线", rolled_back: "已回滚" }[status] || status;
+}
+
+async function loadReleases() {
+  const payload = await api("/api/admin/releases");
+  state.admin.releases = payload.items || [];
+  document.querySelector("#releaseList").innerHTML = state.admin.releases.length ? state.admin.releases.map((item) => `
+    <article class="release-row" data-release-status="${escapeHtml(item.status)}">
+      <div><small>${escapeHtml(item.asset_type)} · ${escapeHtml(item.asset_key)}</small><strong>${escapeHtml(item.version)}</strong><span>${escapeHtml(item.id)} · ${escapeHtml(formatTime(item.created_at))}</span></div>
+      <div class="release-checks">${(item.test_summary || []).map((check) => `<span data-passed="${check.passed ? "yes" : "no"}">${check.passed ? "✓" : "×"} ${escapeHtml(check.name)}</span>`).join("")}</div>
+      <strong class="release-status">${escapeHtml(releaseStatusName(item.status))}</strong>
+      <div class="release-actions">
+        ${item.status === "tested" ? `<button class="primary-button" data-action="prepare-release" data-release-id="${escapeHtml(item.id)}" type="button">第 1 步：准备上线</button>` : ""}
+        ${item.status === "prepared" ? `<button class="primary-button" data-action="confirm-release" data-release-id="${escapeHtml(item.id)}" type="button">第 2 步：确认上线</button>` : ""}
+        ${item.status === "published" && item.diff?.previous_version ? `<button class="secondary-button" data-action="rollback-release" data-release-id="${escapeHtml(item.id)}" type="button">回滚上一版</button>` : ""}
+      </div>
+    </article>`).join("") : `<div class="admin-empty">还没有测试或上线记录。先在提示词或知识库中创建草稿。</div>`;
+}
+
+async function prepareRelease(releaseId) {
+  await api(`/api/admin/releases/${encodeURIComponent(releaseId)}/prepare`, { method: "POST", body: "{}" });
+  showToast("第一步完成：已准备上线，还需要最终确认");
+  await loadReleases();
+}
+
+function askPublishConfirmation(releaseId) {
+  state.admin.pendingPublishId = releaseId;
+  document.querySelector("#confirmOnlineCheck").checked = false;
+  openDialog(publishConfirmDialog);
+  document.querySelector("#confirmOnlineCheck").focus();
+}
+
+async function publishRelease(releaseId) {
+  await api(`/api/admin/releases/${encodeURIComponent(releaseId)}/publish`, {
+    method: "POST",
+    body: JSON.stringify({ confirmed_online: true }),
+  });
+  showToast("新版本已上线，将用于后续新事件");
+  await Promise.all([loadReleases(), loadAdminSummary()]);
+}
+
+async function rollbackRelease(releaseId) {
+  const confirmed = window.confirm("确认回滚到上一版？新事件将改用上一版，历史事件不会被重写。");
+  if (!confirmed) return;
+  await api(`/api/admin/releases/${encodeURIComponent(releaseId)}/rollback`, { method: "POST", body: "{}" });
+  showToast("已回滚到上一版");
+  await Promise.all([loadReleases(), loadAdminSummary()]);
+}
+
+function renderRagRunList() {
+  document.querySelector("#ragRunList").innerHTML = state.admin.ragRuns.length ? state.admin.ragRuns.map((run) => `
+    <button class="rag-run-row ${state.admin.selectedRagRun === run.id ? "is-selected" : ""}" data-rag-run-id="${escapeHtml(run.id)}" type="button">
+      <small>${escapeHtml(run.mode)} · ${escapeHtml(formatTime(run.created_at))}</small>
+      <strong>${escapeHtml(run.incident_id)}</strong>
+      <span>知识 ${escapeHtml(run.knowledge_version)} · 提示词 ${escapeHtml(run.prompt_version)}</span>
+    </button>`).join("") : `<div class="admin-empty">还没有分析链路。分析一份日志后会自动出现。</div>`;
+}
+
+async function loadRagRuns() {
+  const payload = await api("/api/admin/rag-runs");
+  state.admin.ragRuns = payload.items || [];
+  renderRagRunList();
+  if (!state.admin.selectedRagRun && state.admin.ragRuns[0]) await selectRagRun(state.admin.ragRuns[0].id);
+}
+
+async function selectRagRun(runId) {
+  state.admin.selectedRagRun = runId;
+  renderRagRunList();
+  const run = await api(`/api/admin/rag-runs/${encodeURIComponent(runId)}`);
+  const hits = run.hits || [];
+  document.querySelector("#ragTraceDetail").innerHTML = `
+    <header class="rag-trace-head"><div><small>${escapeHtml(run.id)}</small><h3>事件 ${escapeHtml(run.incident_id)}</h3></div><span>${escapeHtml(run.mode)} · ${escapeHtml(run.model_provider)}</span></header>
+    <div class="rag-route" aria-label="RAG 分析数据流">${(run.steps || []).map((step) => `
+      <details class="rag-step" data-step-status="${escapeHtml(step.status)}" ${step.order <= 4 || step.type === "final_result" ? "open" : ""}>
+        <summary><span class="rag-order">${String(step.order).padStart(2, "0")}</span><div><strong>${escapeHtml(ragStepNames[step.type] || step.type)}</strong><small>${escapeHtml(step.message)}</small></div><b>${step.status === "not_run" ? "未运行" : "已记录"}</b></summary>
+        <div class="rag-step-body"><section><small>输入</small><pre>${escapeHtml(jsonText(step.input))}</pre></section><section><small>输出</small><pre>${escapeHtml(jsonText(step.output))}</pre></section></div>
+      </details>`).join("")}</div>
+    <section class="retrieval-audit"><header><h4>本次命中的知识与原因</h4><span>${hits.length} 条</span></header>
+      ${hits.length ? hits.map((hit) => `<article><div><strong>#${hit.rank} ${escapeHtml(hit.card_id)}</strong><span>总分 ${Number(hit.score || 0).toFixed(3)}</span></div><p>${escapeHtml((hit.reasons || []).join("；") || "无文字原因")}</p><pre>${escapeHtml(jsonText(hit.retrieval))}</pre></article>`).join("") : `<p class="admin-empty">本次没有命中知识卡。</p>`}
+    </section>`;
+}
+
 document.addEventListener("click", (event) => {
   const incidentButton = event.target.closest("[data-incident-id]");
   if (incidentButton) selectIncident(incidentButton.dataset.incidentId);
@@ -757,6 +1134,15 @@ document.addEventListener("click", (event) => {
     openDialog(facilityDialog);
     loadFacilities().catch((error) => showToast(error.message, true));
   }
+  if (action === "open-admin") openAdmin();
+  if (action === "load-admin-records") loadAdminRecords().catch((error) => showToast(error.message, true));
+  if (action === "load-rag-runs") loadRagRuns().catch((error) => showToast(error.message, true));
+  if (action === "load-releases") loadReleases().catch((error) => showToast(error.message, true));
+  if (action === "preview-prompt") previewPrompt(event.target.closest("[data-action]")).catch((error) => showToast(error.message, true));
+  if (action === "test-asset") testAsset(event.target.closest("[data-action]")).catch((error) => showToast(error.message, true));
+  if (action === "prepare-release") prepareRelease(event.target.closest("[data-action]").dataset.releaseId).catch((error) => showToast(error.message, true));
+  if (action === "confirm-release") askPublishConfirmation(event.target.closest("[data-action]").dataset.releaseId);
+  if (action === "rollback-release") rollbackRelease(event.target.closest("[data-action]").dataset.releaseId).catch((error) => showToast(error.message, true));
   if (action === "check-sources") {
     const button = event.target.closest("[data-action]");
     const original = button.textContent;
@@ -788,6 +1174,36 @@ document.addEventListener("click", (event) => {
     document.querySelectorAll("[data-filter]").forEach((button) => button.classList.toggle("is-active", button === filterButton));
     renderList();
   }
+
+  const adminTab = event.target.closest("[data-admin-tab]")?.dataset.adminTab;
+  if (adminTab) activateAdminTab(adminTab);
+
+  const knowledgeButton = event.target.closest("[data-knowledge-id]");
+  if (knowledgeButton) selectKnowledge(knowledgeButton.dataset.knowledgeId).catch((error) => showToast(error.message, true));
+
+  const promptButton = event.target.closest("[data-prompt-key]");
+  if (promptButton && !promptButton.dataset.action) selectPrompt(promptButton.dataset.promptKey).catch((error) => showToast(error.message, true));
+
+  const ragButton = event.target.closest("[data-rag-run-id]");
+  if (ragButton) selectRagRun(ragButton.dataset.ragRunId).catch((error) => showToast(error.message, true));
+});
+
+document.addEventListener("submit", (event) => {
+  const annotationForm = event.target.closest(".annotation-form");
+  if (annotationForm) {
+    event.preventDefault();
+    saveAnnotation(annotationForm).catch((error) => showToast(error.message, true));
+    return;
+  }
+  if (event.target.matches("#knowledgeDraftForm")) {
+    event.preventDefault();
+    createKnowledgeDraft(event.target).catch((error) => showToast(`知识草稿保存失败：${error.message}`, true));
+    return;
+  }
+  if (event.target.matches("#promptDraftForm")) {
+    event.preventDefault();
+    createPromptDraft(event.target).catch((error) => showToast(`提示词草稿保存失败：${error.message}`, true));
+  }
 });
 
 document.querySelector("#refreshButton").addEventListener("click", () => loadIncidents());
@@ -795,6 +1211,15 @@ document.querySelector("#searchInput").addEventListener("input", (event) => {
   state.query = event.target.value;
   renderList();
 });
+document.querySelector("#roleSelect").addEventListener("change", (event) => setRole(event.target.value));
+document.querySelector("#knowledgeSearch").addEventListener("input", renderKnowledgeList);
+document.querySelector("#recordSearch").addEventListener("keydown", (event) => {
+  if (event.key === "Enter") {
+    event.preventDefault();
+    loadAdminRecords().catch((error) => showToast(error.message, true));
+  }
+});
+document.querySelector("#recordTypeSelect").addEventListener("change", () => loadAdminRecords().catch((error) => showToast(error.message, true)));
 
 document.querySelectorAll(".dialog-tab").forEach((tab) => {
   tab.addEventListener("click", () => {
@@ -833,12 +1258,27 @@ document.querySelector("#facilityForm").addEventListener("submit", (event) => {
   saveFacility(event.currentTarget);
 });
 
-for (const dialog of [ingestDialog, demoDialog, sourceDialog, facilityDialog]) {
+document.querySelector("#publishConfirmForm").addEventListener("submit", (event) => {
+  const submitter = event.submitter?.value;
+  if (submitter !== "confirm") return;
+  event.preventDefault();
+  if (!document.querySelector("#confirmOnlineCheck").checked) {
+    showToast("请先勾选线上环境确认", true);
+    document.querySelector("#confirmOnlineCheck").focus();
+    return;
+  }
+  const releaseId = state.admin.pendingPublishId;
+  closeDialog(publishConfirmDialog);
+  publishRelease(releaseId).catch((error) => showToast(error.message, true));
+});
+
+for (const dialog of [ingestDialog, demoDialog, sourceDialog, facilityDialog, adminDialog, publishConfirmDialog]) {
   dialog.addEventListener("click", (event) => {
     if (event.target === dialog) closeDialog(dialog);
   });
 }
 
+setRole(state.role);
 loadDemos();
 loadSources(false).catch(() => {});
 loadFacilities().catch(() => {});

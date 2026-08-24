@@ -35,10 +35,25 @@
           <span class="rail-icon" aria-hidden="true">房</span>
           <span>机房等级</span>
         </button>
+        <button class="rail-button" id="adminRailButton" data-action="open-admin" type="button">
+          <span class="rail-icon" aria-hidden="true">管</span>
+          <span>数据与AI</span>
+        </button>
       </nav>
-      <div class="system-pulse" id="systemPulse" title="本地服务状态">
-        <span class="pulse-dot" aria-hidden="true"></span>
-        <span>本地</span>
+      <div class="rail-footer">
+        <label class="role-picker" for="roleSelect">
+          <span>当前工作台</span>
+          <select id="roleSelect">
+            <option value="onsite_operator">现场人员</option>
+            <option value="facility_lead">机房组长</option>
+            <option value="interface_engineer">系统/网络接口人</option>
+            <option value="ai_admin" selected>AI 管理员</option>
+          </select>
+        </label>
+        <div class="system-pulse" id="systemPulse" title="本地服务状态">
+          <span class="pulse-dot" aria-hidden="true"></span>
+          <span>本地服务</span>
+        </div>
       </div>
     </aside>
 
@@ -240,6 +255,109 @@
       <p class="dialog-intro">这里全部是系统生成的测试数据，用来体验分析流程，不代表任何真实设备状态。</p>
       <div class="demo-grid" id="demoGrid"></div>
     </div>
+  </dialog>
+
+  <dialog class="work-dialog admin-dialog" id="adminDialog" aria-labelledby="adminTitle">
+    <div class="dialog-frame admin-frame">
+      <header class="dialog-header admin-header">
+        <div>
+          <p class="eyebrow">DATA &amp; AI CONTROL ROOM</p>
+          <h2 id="adminTitle">数据与 AI 管理</h2>
+          <p>查看系统保存了什么、AI 根据什么判断，并在测试通过后把新版本用于后续事件。</p>
+        </div>
+        <button class="icon-button" data-close-dialog type="button" aria-label="关闭数据与 AI 管理">×</button>
+      </header>
+
+      <div class="admin-summary" id="adminSummary" aria-live="polite"></div>
+
+      <div class="admin-workbench">
+        <nav class="admin-nav" aria-label="数据与 AI 管理栏目">
+          <button class="admin-nav-button is-active" data-admin-tab="database" type="button"><strong>我的数据库</strong><span>事件、输入与审计记录</span></button>
+          <button class="admin-nav-button" data-admin-tab="knowledge" type="button"><strong>经验知识库</strong><span>规则、SOP 与历史经验</span></button>
+          <button class="admin-nav-button" data-admin-tab="prompts" type="button"><strong>提示词中心</strong><span>System 与用户提示词</span></button>
+          <button class="admin-nav-button" data-admin-tab="rag" type="button"><strong>分析链路</strong><span>每次判断的 8 个步骤</span></button>
+          <button class="admin-nav-button" data-admin-tab="releases" type="button"><strong>上线记录</strong><span>测试、发布与回滚</span></button>
+        </nav>
+
+        <section class="admin-panel is-active" data-admin-panel="database" aria-labelledby="databasePanelTitle">
+          <header class="admin-panel-header">
+            <div><p class="eyebrow">VISIBLE DATABASE</p><h3 id="databasePanelTitle">系统目前保存的数据</h3></div>
+            <div class="admin-toolbar">
+              <label>数据类型
+                <select id="recordTypeSelect">
+                  <option value="incidents">故障事件</option>
+                  <option value="event_inputs">原始输入</option>
+                  <option value="audit_log">操作审计</option>
+                  <option value="facilities">机房档案</option>
+                </select>
+              </label>
+              <label>搜索<input id="recordSearch" type="search" placeholder="输入事件ID、SN或内容"></label>
+              <button class="secondary-button" data-action="load-admin-records" type="button">查询数据</button>
+            </div>
+          </header>
+          <p class="panel-explainer">这里是底层数据库的只读窗口。原记录不能直接覆盖；如需补充说明，可以添加一条可追查的备注。</p>
+          <div class="record-browser" id="recordBrowser" aria-live="polite"></div>
+        </section>
+
+        <section class="admin-panel" data-admin-panel="knowledge" aria-labelledby="knowledgePanelTitle">
+          <header class="admin-panel-header">
+            <div><p class="eyebrow">EXPERIENCE ASSET</p><h3 id="knowledgePanelTitle">经验知识库</h3></div>
+            <label class="inline-search">筛选知识<input id="knowledgeSearch" type="search" placeholder="磁盘、网络、温度、OMS…"></label>
+          </header>
+          <p class="panel-explainer">已发布版本会参与后续故障分析。新的现场经验先保存成草稿，不会立刻改变线上判断。</p>
+          <div class="asset-split">
+            <div class="asset-list" id="knowledgeList" aria-label="知识卡列表"></div>
+            <div class="asset-detail" id="knowledgeDetail" aria-live="polite"><div class="admin-empty">从左侧选择一条经验查看原文和版本。</div></div>
+          </div>
+        </section>
+
+        <section class="admin-panel" data-admin-panel="prompts" aria-labelledby="promptPanelTitle">
+          <header class="admin-panel-header">
+            <div><p class="eyebrow">PROMPT VERSIONING</p><h3 id="promptPanelTitle">System 与用户提示词</h3></div>
+            <span class="safety-badge">草稿 → 测试 → 两次确认上线</span>
+          </header>
+          <p class="panel-explainer">你可以查看并修改提示词。只有“已发布”的版本会用于新分析；历史事件仍保留当时使用的版本。</p>
+          <div class="asset-split prompt-split">
+            <div class="asset-list" id="promptList" aria-label="提示词列表"></div>
+            <div class="asset-detail" id="promptDetail" aria-live="polite"><div class="admin-empty">从左侧选择一个提示词查看 System、用户模板和版本。</div></div>
+          </div>
+        </section>
+
+        <section class="admin-panel" data-admin-panel="rag" aria-labelledby="ragPanelTitle">
+          <header class="admin-panel-header">
+            <div><p class="eyebrow">AUDITABLE RAG</p><h3 id="ragPanelTitle">一次判断是怎样产生的</h3></div>
+            <button class="secondary-button" data-action="load-rag-runs" type="button">刷新链路</button>
+          </header>
+          <p class="panel-explainer">显示系统实际执行的步骤，不展示模型私有思维过程。你能看到输入、提取结果、命中知识、模型调用状态、硬校验和最终结论。</p>
+          <div class="rag-split">
+            <div class="rag-run-list" id="ragRunList" aria-label="分析运行记录"></div>
+            <div class="rag-trace-detail" id="ragTraceDetail" aria-live="polite"><div class="admin-empty">选择一次分析，查看完整数据流。</div></div>
+          </div>
+        </section>
+
+        <section class="admin-panel" data-admin-panel="releases" aria-labelledby="releasePanelTitle">
+          <header class="admin-panel-header">
+            <div><p class="eyebrow">SAFE RELEASE</p><h3 id="releasePanelTitle">测试、上线与回滚记录</h3></div>
+            <button class="secondary-button" data-action="load-releases" type="button">刷新记录</button>
+          </header>
+          <p class="panel-explainer">个人版由一名 AI 管理员完成两步确认；正式版可切换为双人审批。已发布版本可回滚到上一版。</p>
+          <div class="release-list" id="releaseList" aria-live="polite"></div>
+        </section>
+      </div>
+    </div>
+  </dialog>
+
+  <dialog class="confirm-dialog" id="publishConfirmDialog" aria-labelledby="publishConfirmTitle">
+    <form method="dialog" class="confirm-card" id="publishConfirmForm">
+      <p class="eyebrow">PRODUCTION CONFIRMATION</p>
+      <h2 id="publishConfirmTitle">确认用于后续真实事件？</h2>
+      <p>这会把刚才测试通过的版本设为线上版本。已有历史事件不会被重写。</p>
+      <label class="confirm-check"><input id="confirmOnlineCheck" type="checkbox" required> 我确认这是线上环境，并已核对目标版本</label>
+      <div class="form-actions">
+        <button class="secondary-button" value="cancel" type="submit">取消</button>
+        <button class="primary-button" id="publishConfirmButton" value="confirm" type="submit">确认上线</button>
+      </div>
+    </form>
   </dialog>
 
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
