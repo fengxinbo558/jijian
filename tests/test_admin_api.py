@@ -133,6 +133,27 @@ class AdminAPITests(unittest.TestCase):
             urllib.request.urlopen(request, timeout=3)
         self.assertEqual(raised.exception.code, 403)
 
+    def test_model_provider_adapters_are_visible_without_returning_secrets(self):
+        status, providers = self.request_json("/api/admin/providers")
+        self.assertEqual(status, 200)
+        self.assertGreaterEqual(len(providers["items"]), 3)
+        status, updated = self.request_json(
+            "/api/admin/providers/private-partner-adapter",
+            {
+                "display_name": "合作厂商私有部署",
+                "provider_type": "private_partner",
+                "endpoint": "http://partner-model.internal/v1",
+                "model": "ops-model",
+                "enabled": True,
+                "secret_configured": True,
+                "api_key": "NEVER-RETURN-THIS",
+                "data_residency": "customer_datacenter",
+            },
+        )
+        self.assertEqual(status, 200)
+        self.assertEqual(updated["connection_state"], "configured_not_tested")
+        self.assertNotIn("NEVER-RETURN-THIS", json.dumps(updated, ensure_ascii=False))
+
 
 if __name__ == "__main__":
     unittest.main()

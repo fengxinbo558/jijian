@@ -285,6 +285,7 @@
           <button class="admin-nav-button" data-admin-tab="knowledge" type="button"><strong>经验知识库</strong><span>规则、SOP 与历史经验</span></button>
           <button class="admin-nav-button" data-admin-tab="prompts" type="button"><strong>提示词中心</strong><span>System 与用户提示词</span></button>
           <button class="admin-nav-button" data-admin-tab="rag" type="button"><strong>分析链路</strong><span>每次判断的 8 个步骤</span></button>
+          <button class="admin-nav-button" data-admin-tab="providers" type="button"><strong>模型与厂商</strong><span>本地、私有化与合作接口</span></button>
           <button class="admin-nav-button" data-admin-tab="releases" type="button"><strong>上线记录</strong><span>测试、发布与回滚</span></button>
         </nav>
 
@@ -338,6 +339,14 @@
             <button class="secondary-button" data-action="load-rag-runs" type="button">刷新链路</button>
           </header>
           <p class="panel-explainer">显示系统实际执行的步骤，不展示模型私有思维过程。你能看到输入、提取结果、命中知识、模型调用状态、硬校验和最终结论。</p>
+          <div class="rag-architecture" aria-label="RAG 总体架构图">
+            <div><small>输入</small><strong>日志 · 告警 · 现场</strong></div><span aria-hidden="true">→</span>
+            <div><small>可追查事实</small><strong>原文 · 字段 · 时间</strong></div><span aria-hidden="true">→</span>
+            <div class="rag-core"><small>混合检索</small><strong>规则＋事实＋关键词＋本地向量</strong><em>读取已发布经验知识库</em></div><span aria-hidden="true">→</span>
+            <div><small>可选模型</small><strong>版本化提示词</strong><em>未启用时跳过</em></div><span aria-hidden="true">→</span>
+            <div><small>硬校验</small><strong>证据引用 · 权限边界</strong></div><span aria-hidden="true">→</span>
+            <div><small>输出</small><strong>候选 · 反证 · 下一步</strong></div>
+          </div>
           <div class="rag-split">
             <div class="rag-run-list" id="ragRunList" aria-label="分析运行记录"></div>
             <div class="rag-trace-detail" id="ragTraceDetail" aria-live="polite"><div class="admin-empty">选择一次分析，查看完整数据流。</div></div>
@@ -351,6 +360,18 @@
           </header>
           <p class="panel-explainer">个人版由一名 AI 管理员完成两步确认；正式版可切换为双人审批。已发布版本可回滚到上一版。</p>
           <div class="release-list" id="releaseList" aria-live="polite"></div>
+        </section>
+
+        <section class="admin-panel" data-admin-panel="providers" aria-labelledby="providerPanelTitle">
+          <header class="admin-panel-header">
+            <div><p class="eyebrow">MODEL PROVIDER ADAPTERS</p><h3 id="providerPanelTitle">模型与合作厂商接口</h3></div>
+            <button class="secondary-button" data-action="load-providers" type="button">刷新状态</button>
+          </header>
+          <p class="panel-explainer">默认优先本地模型。合作厂商可走客户机房内的私有化接口；外部云接口默认禁用。这里显示“适配配置”，不把“已填写地址”冒充成“已经调用成功”。</p>
+          <div class="provider-layout">
+            <div class="provider-list" id="providerList" aria-label="模型提供方列表"></div>
+            <div class="provider-detail" id="providerDetail" aria-live="polite"><div class="admin-empty">选择一个适配器查看数据边界和配置。</div></div>
+          </div>
         </section>
       </div>
     </div>

@@ -16,6 +16,7 @@ from .integrations import IntegrationHub
 from .knowledge import KnowledgeBase
 from .models import NormalizedInput, RuleAnalysis, utc_now
 from .operations import OperationService
+from .providers import ProviderRegistry
 from .rules import analyze_rules
 from .releases import ReleaseManager
 from .rag_trace import RagTraceRecorder
@@ -138,6 +139,8 @@ class IncidentService:
         self.releases = ReleaseManager(store, self.assets)
         self.rag_traces = RagTraceRecorder(store, self.assets)
         self.operations = OperationService(store)
+        self.providers = ProviderRegistry(store)
+        self.providers.ensure_seeded()
         self.ai = ai or AIEnricher(self.assets)
         self.knowledge = knowledge or KnowledgeBase(registry=self.assets)
         self.integrations = integrations or IntegrationHub()

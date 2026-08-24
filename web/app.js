@@ -17,9 +17,11 @@ const state = {
     prompts: [],
     releases: [],
     ragRuns: [],
+    providers: [],
     selectedKnowledge: null,
     selectedPrompt: null,
     selectedRagRun: null,
+    selectedProvider: null,
     pendingPublishId: null,
   },
 };
@@ -843,6 +845,7 @@ function activateAdminTab(name) {
   if (name === "knowledge") loadKnowledge().catch((error) => showToast(error.message, true));
   if (name === "prompts") loadPrompts().catch((error) => showToast(error.message, true));
   if (name === "rag") loadRagRuns().catch((error) => showToast(error.message, true));
+  if (name === "providers") loadProviders().catch((error) => showToast(error.message, true));
   if (name === "releases") loadReleases().catch((error) => showToast(error.message, true));
 }
 
@@ -1131,6 +1134,70 @@ async function selectRagRun(runId) {
     </section>`;
 }
 
+function providerTypeName(value) {
+  return { local: "本地模型", private_partner: "合作厂商私有化", cloud: "经授权云接口" }[value] || value;
+}
+
+function providerStateName(value) {
+  return { not_configured: "尚未接通", configured_not_tested: "已配置，尚未验证" }[value] || value;
+}
+
+function renderProviderList() {
+  document.querySelector("#providerList").innerHTML = state.admin.providers.map((item) => `
+    <button class="provider-row ${state.admin.selectedProvider === item.provider_key ? "is-selected" : ""}" data-provider-key="${escapeHtml(item.provider_key)}" type="button">
+      <small>${escapeHtml(providerTypeName(item.provider_type))}</small><strong>${escapeHtml(item.display_name)}</strong>
+      <span>${escapeHtml(providerStateName(item.connection_state))}${item.enabled ? " · 已启用" : " · 已禁用"}</span>
+    </button>`).join("");
+}
+
+async function loadProviders() {
+  const payload = await api("/api/admin/providers");
+  state.admin.providers = payload.items || [];
+  renderProviderList();
+  if (!state.admin.selectedProvider && state.admin.providers[0]) await selectProvider(state.admin.providers[0].provider_key);
+}
+
+async function selectProvider(providerKey) {
+  state.admin.selectedProvider = providerKey;
+  renderProviderList();
+  const provider = await api(`/api/admin/providers/${encodeURIComponent(providerKey)}`);
+  const config = provider.config || {};
+  const policy = provider.policies?.[0] || {};
+  document.querySelector("#providerDetail").innerHTML = `
+    <header class="provider-head"><div><small>${escapeHtml(provider.provider_key)}</small><h3>${escapeHtml(provider.display_name)}</h3><p>${escapeHtml(config.description || "")}</p></div><span data-provider-state="${escapeHtml(provider.connection_state)}">${escapeHtml(providerStateName(provider.connection_state))}</span></header>
+    <div class="provider-boundary">
+      <section><small>允许进入模型的内容</small>${listLines(policy.data_policy?.allowed || [], "尚未配置")}</section>
+      <section><small>未授权时禁止外发</small>${listLines(policy.data_policy?.blocked_without_explicit_authorization || [], "尚未配置")}</section>
+      <section><small>失败回退</small><strong>回到规则＋本地知识</strong><span>不会自动改发另一家外部厂商</span></section>
+    </div>
+    <form class="provider-form" id="providerForm" data-provider-key="${escapeHtml(provider.provider_key)}">
+      <div class="form-grid compact-fields">
+        <label>显示名称<input name="display_name" required value="${escapeHtml(provider.display_name)}"></label>
+        <label>接口类型<select name="provider_type"><option value="local" ${provider.provider_type === "local" ? "selected" : ""}>本地模型</option><option value="private_partner" ${provider.provider_type === "private_partner" ? "selected" : ""}>合作厂商私有化</option><option value="cloud" ${provider.provider_type === "cloud" ? "selected" : ""}>经授权云接口</option></select></label>
+        <label>兼容接口地址<input name="endpoint" value="${escapeHtml(config.endpoint || "")}" placeholder="https://gateway.example/v1"></label>
+        <label>模型名称<input name="model" value="${escapeHtml(config.model || "")}"></label>
+        <label>数据驻留位置<input name="data_residency" value="${escapeHtml(config.data_residency || "unknown")}"></label>
+        <label>超时秒数<input name="timeout_seconds" type="number" min="1" max="120" value="${escapeHtml(config.timeout_seconds || 20)}"></label>
+      </div>
+      <label class="provider-check"><input name="enabled" type="checkbox" ${provider.enabled ? "checked" : ""}> 启用这个适配器（不代表已经验证连通）</label>
+      <label class="provider-check"><input name="secret_configured" type="checkbox" ${provider.secret_configured ? "checked" : ""}> 密钥已通过部署环境配置</label>
+      <p>密钥不在这个页面填写，也不会通过接口回显。当前版本只保存适配器元数据；真实厂商接入需要官方接口契约和测试环境。</p>
+      <footer class="editor-actions"><button class="primary-button" type="submit">保存适配配置</button></footer>
+    </form>`;
+}
+
+async function saveProvider(form) {
+  const raw = new FormData(form);
+  const payload = Object.fromEntries(raw.entries());
+  payload.enabled = form.querySelector('[name="enabled"]').checked;
+  payload.secret_configured = form.querySelector('[name="secret_configured"]').checked;
+  payload.timeout_seconds = Number(payload.timeout_seconds || 20);
+  const updated = await api(`/api/admin/providers/${encodeURIComponent(form.dataset.providerKey)}`, { method: "POST", body: JSON.stringify(payload) });
+  showToast(`${updated.display_name} 的适配配置已保存；连通性仍需真实接口验证`);
+  await loadProviders();
+  await selectProvider(form.dataset.providerKey);
+}
+
 const operationStatusNames = {
   awaiting_identity: "等待核对设备身份",
   blocked_identity: "设备身份不一致，已阻止",
@@ -1161,7 +1228,7 @@ function renderOperationSession() {
     <div><small>当前工作台</small><strong>${escapeHtml(roleNames[state.role])}</strong></div>
     <div><small>操作账号</small><strong>${escapeHtml(state.actor)}</strong></div>
     <div><small>复核原则</small><strong>操作人与复核人不能相同</strong></div>
-    <div><small>夜间路径</small><strong>授权复核池 → 备用人 → 负责人</strong></div>`;
+    <div><small>夜间建议路径（通知接口待接）</small><strong>授权复核池 → 备用人 → 负责人</strong></div>`;
   document.querySelector("#omsImportSection").classList.toggle("is-unavailable", !canImportOperation());
   document.querySelector("#omsImportSection").open = canImportOperation();
 }
@@ -1209,7 +1276,7 @@ function operationActions(operation) {
   }
   if (!final && operation.status !== "operating" && operation.identity_status === "confirmed" && operation.permission_status === "allowed") {
     blocks.push(`<form class="operation-action-form" data-operation-action="review" data-operation-id="${escapeHtml(operation.id)}">
-      <header><strong>3. 第二人复核</strong><span>白天可由现场同岗复核；单人值班可由授权人员远程复核</span></header>
+      <header><strong>3. 第二人复核</strong><span>白天可由现场同岗复核；单人值班可由授权人员远程复核。首版记录结果，暂不自动发送如流或电话。</span></header>
       <div class="operation-action-grid">
         <label>复核方式<select name="review_mode"><option value="onsite_peer">现场同岗双人复核</option><option value="remote_authorized">授权远程复核</option></select></label>
         <label>复核结论<select name="decision"><option value="approved">信息一致，允许开始</option><option value="rejected">信息有疑问，阻止操作</option></select></label>
@@ -1346,6 +1413,7 @@ document.addEventListener("click", (event) => {
   if (action === "load-admin-records") loadAdminRecords().catch((error) => showToast(error.message, true));
   if (action === "load-rag-runs") loadRagRuns().catch((error) => showToast(error.message, true));
   if (action === "load-releases") loadReleases().catch((error) => showToast(error.message, true));
+  if (action === "load-providers") loadProviders().catch((error) => showToast(error.message, true));
   if (action === "preview-prompt") previewPrompt(event.target.closest("[data-action]")).catch((error) => showToast(error.message, true));
   if (action === "test-asset") testAsset(event.target.closest("[data-action]")).catch((error) => showToast(error.message, true));
   if (action === "prepare-release") prepareRelease(event.target.closest("[data-action]").dataset.releaseId).catch((error) => showToast(error.message, true));
@@ -1386,17 +1454,20 @@ document.addEventListener("click", (event) => {
   const adminTab = event.target.closest("[data-admin-tab]")?.dataset.adminTab;
   if (adminTab) activateAdminTab(adminTab);
 
-  const knowledgeButton = event.target.closest("[data-knowledge-id]");
+  const knowledgeButton = event.target.closest(".asset-row[data-knowledge-id]");
   if (knowledgeButton) selectKnowledge(knowledgeButton.dataset.knowledgeId).catch((error) => showToast(error.message, true));
 
-  const promptButton = event.target.closest("[data-prompt-key]");
-  if (promptButton && !promptButton.dataset.action) selectPrompt(promptButton.dataset.promptKey).catch((error) => showToast(error.message, true));
+  const promptButton = event.target.closest(".asset-row[data-prompt-key]");
+  if (promptButton) selectPrompt(promptButton.dataset.promptKey).catch((error) => showToast(error.message, true));
 
-  const ragButton = event.target.closest("[data-rag-run-id]");
+  const ragButton = event.target.closest(".rag-run-row[data-rag-run-id]");
   if (ragButton) selectRagRun(ragButton.dataset.ragRunId).catch((error) => showToast(error.message, true));
 
-  const operationButton = event.target.closest("[data-operation-id]");
-  if (operationButton && !operationButton.dataset.action) selectOperation(operationButton.dataset.operationId).catch((error) => showToast(error.message, true));
+  const operationButton = event.target.closest(".operation-row[data-operation-id]");
+  if (operationButton) selectOperation(operationButton.dataset.operationId).catch((error) => showToast(error.message, true));
+
+  const providerButton = event.target.closest(".provider-row[data-provider-key]");
+  if (providerButton) selectProvider(providerButton.dataset.providerKey).catch((error) => showToast(error.message, true));
 });
 
 document.addEventListener("submit", (event) => {
@@ -1425,6 +1496,11 @@ document.addEventListener("submit", (event) => {
   if (operationForm) {
     event.preventDefault();
     submitOperationAction(operationForm).catch((error) => showToast(error.message, true));
+    return;
+  }
+  if (event.target.matches("#providerForm")) {
+    event.preventDefault();
+    saveProvider(event.target).catch((error) => showToast(`适配配置保存失败：${error.message}`, true));
   }
 });
 

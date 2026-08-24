@@ -115,6 +115,14 @@ class RequestHandler(BaseHTTPRequestHandler):
                     HTTPStatus.OK,
                     {"items": self.app.service.releases.list()},
                 )
+            elif path == "/api/admin/providers":
+                self._json(HTTPStatus.OK, {"items": self.app.service.providers.list()})
+            elif path.startswith("/api/admin/providers/"):
+                provider_key = unquote(path.removeprefix("/api/admin/providers/"))
+                item = self.app.service.providers.get(provider_key)
+                if item is None:
+                    raise APIError(HTTPStatus.NOT_FOUND, "模型提供方不存在")
+                self._json(HTTPStatus.OK, item)
             elif path == "/api/admin/rag-runs":
                 self._json(
                     HTTPStatus.OK,
@@ -217,6 +225,9 @@ class RequestHandler(BaseHTTPRequestHandler):
             elif path == "/api/admin/releases/test":
                 result = self.app.service.releases.test_asset(payload, self._actor())
                 self._json(HTTPStatus.CREATED, result)
+            elif len(parts) == 4 and parts[:3] == ["api", "admin", "providers"]:
+                result = self.app.service.providers.upsert(parts[3], payload)
+                self._json(HTTPStatus.OK, result)
             elif len(parts) == 5 and parts[:3] == ["api", "admin", "releases"] and parts[4] == "prepare":
                 self._json(HTTPStatus.OK, self.app.service.releases.prepare(parts[3]))
             elif len(parts) == 5 and parts[:3] == ["api", "admin", "releases"] and parts[4] == "publish":
