@@ -35,6 +35,10 @@
           <span class="rail-icon" aria-hidden="true">房</span>
           <span>机房等级</span>
         </button>
+        <button class="rail-button" id="labRailButton" data-action="open-lab" type="button">
+          <span class="rail-icon" aria-hidden="true">联</span>
+          <span>接入实验室</span>
+        </button>
         <button class="rail-button" id="adminRailButton" data-action="open-admin" type="button">
           <span class="rail-icon" aria-hidden="true">管</span>
           <span>数据与AI</span>
@@ -52,6 +56,7 @@
             <option value="facility_lead">机房组长</option>
             <option value="interface_person">系统/网络接口人</option>
             <option value="ai_admin" selected>AI 管理员</option>
+            <option value="super_admin">最高管理员</option>
           </select>
         </label>
         <label class="role-picker" for="userIdentity">
@@ -74,6 +79,8 @@
         </div>
         <button class="icon-button" id="refreshButton" type="button" aria-label="刷新事件">↻</button>
       </header>
+
+      <section class="role-brief" id="roleBrief" aria-live="polite"></section>
 
       <div class="status-counts" aria-label="事件数量">
         <button class="count-block is-active" data-filter="all" type="button">
@@ -266,6 +273,120 @@
     </div>
   </dialog>
 
+  <dialog class="work-dialog lab-dialog" id="labDialog" aria-labelledby="labTitle">
+    <div class="dialog-frame lab-frame">
+      <header class="dialog-header lab-header">
+        <div>
+          <p class="eyebrow">MULTI-PLATFORM SIGNAL LAB</p>
+          <h2 id="labTitle">接入实验室与 AI 调查审计</h2>
+          <p>六类模拟平台走未来真实接入会使用的同一条接口。这里的数据全部带“模拟”标记，不会连接或操作真实设备。</p>
+        </div>
+        <button class="icon-button" data-close-dialog type="button" aria-label="关闭接入实验室">×</button>
+      </header>
+
+      <div class="lab-trust-strip" aria-label="实验室责任边界">
+        <div><small>设备身份</small><strong>平台 / CMDB / 人工确认</strong><span>不让模型猜</span></div>
+        <div><small>AI 权限</small><strong>主动查询只读工具</strong><span>不执行断电、更换、CC</span></div>
+        <div><small>最终决定</small><strong>接口人与现场人员</strong><span>责任动作必须人工确认</span></div>
+      </div>
+
+      <nav class="lab-tabs" aria-label="接入实验室栏目">
+        <button class="lab-tab is-active" data-lab-tab="signals" type="button">平台与信号</button>
+        <button class="lab-tab" data-lab-tab="agent" type="button">AI 调查轨迹</button>
+        <button class="lab-tab" data-lab-tab="topology" type="button">拓扑与备份</button>
+      </nav>
+
+      <section class="lab-panel is-active" data-lab-panel="signals" aria-labelledby="labSignalsTitle">
+        <div class="lab-section-heading">
+          <div><p class="eyebrow">CONNECTION MATRIX</p><h3 id="labSignalsTitle">六个平台分别连接，允许只接一部分</h3></div>
+          <button class="secondary-button" data-action="refresh-lab" type="button">刷新状态</button>
+        </div>
+        <div class="platform-grid" id="labPlatformGrid" aria-live="polite"></div>
+
+        <div class="lab-two-column">
+          <section class="lab-card">
+            <header><div><p class="eyebrow">SCENARIO INJECTION</p><h3>运行跨平台场景</h3></div></header>
+            <p>每条信号逐条进入统一接口；系统再用设备身份、拓扑和时间窗口判断是否属于同一事故。</p>
+            <div class="lab-scenario-list" id="labScenarioList"></div>
+          </section>
+          <section class="lab-card">
+            <header><div><p class="eyebrow">MANUAL EVENT</p><h3>手工发送一条平台信号</h3></div></header>
+            <form class="lab-event-form" id="labEventForm">
+              <label for="labEventPayload">平台事件 JSON</label>
+              <textarea id="labEventPayload" name="payload" rows="13" spellcheck="false" aria-describedby="labEventHint" required>{
+  "source_system": "network_nms",
+  "source_event_id": "MANUAL-NMS-001",
+  "occurred_at": "2026-08-24T12:00:00+08:00",
+  "site": "BJYZ",
+  "entity": {
+    "device_name": "HB-BJYZD2SC-ADC-S1",
+    "interface": "HundredGigE7/0/36",
+    "device_type": "switch"
+  },
+  "signal_type": "link_flap_crc",
+  "severity": "critical",
+  "summary": "端口抖动与CRC持续增长",
+  "raw_payload": {"message": "link flap; CRC errors 4281"}
+}</textarea>
+              <small id="labEventHint">来源事件 ID 用于防重；相同平台和 ID 重复提交不会重复建事件。</small>
+              <button class="primary-button" type="submit">发送到统一接入口</button>
+            </form>
+          </section>
+        </div>
+
+        <section class="signal-ledger" aria-labelledby="signalLedgerTitle">
+          <header><div><p class="eyebrow">SIGNAL BUS</p><h3 id="signalLedgerTitle">平台信号怎样进入事故</h3></div></header>
+          <div id="labEventList" aria-live="polite"></div>
+        </section>
+      </section>
+
+      <section class="lab-panel" data-lab-panel="agent" aria-labelledby="labAgentTitle">
+        <div class="lab-section-heading">
+          <div><p class="eyebrow">AUDITABLE AGENT</p><h3 id="labAgentTitle">看得到的 AI 调查过程</h3></div>
+          <span class="safety-badge">结构化依据，不伪造隐藏思维链</span>
+        </div>
+        <p class="panel-explainer">真实模型可用时，AI 会逐轮决定下一次只读查询；未配置模型时会明确显示“未运行”。“测试模型桩”只验证工具协议，绝不冒充真实 AI。</p>
+        <form class="agent-run-form" id="agentRunForm">
+          <label>选择事故<select id="agentIncidentSelect" name="incident_id" required></select></label>
+          <label>调查模式<select name="mode"><option value="model">真实模型 Agent</option><option value="test_stub">测试模型桩（非真实AI）</option><option value="baseline">固定规则基线</option></select></label>
+          <label>最多轮次<input name="max_rounds" type="number" min="1" max="8" value="5"></label>
+          <button class="primary-button" type="submit">开始只读调查</button>
+        </form>
+        <div class="agent-layout">
+          <aside class="agent-run-list" id="agentRunList" aria-label="AI 调查运行记录"></aside>
+          <section class="agent-trace" id="agentTraceDetail" aria-live="polite"><div class="admin-empty">运行或选择一次调查，查看每轮依据、工具、证据和假设变化。</div></section>
+        </div>
+
+        <section class="break-glass" id="breakGlassPanel" hidden aria-labelledby="breakGlassTitle">
+          <header><div><p class="eyebrow">BREAK-GLASS RAW ACCESS</p><h3 id="breakGlassTitle">最高管理员原始记录访问</h3></div></header>
+          <p>默认视图已脱敏。只有排障复核确实需要时，填写原因并再次确认；本次访问会进入不可覆盖的审计记录。</p>
+          <form id="rawAccessForm">
+            <label>记录类型<select name="record_type"><option value="agent_run">AI 调查运行</option><option value="incident">故障事件</option><option value="integration_event">平台信号</option></select></label>
+            <label>记录 ID<input name="record_id" required placeholder="AGT-… / INC-… / IPE-…"></label>
+            <label class="span-two">访问原因<input name="reason" required minlength="5" placeholder="例如：复核模型输出与原始平台返回是否一致"></label>
+            <label class="confirm-check span-two"><input name="confirmed" type="checkbox" required> 我确认本次查看原始记录，并接受系统记录访问人、原因和时间</label>
+            <button class="danger-button" type="submit">确认并查看原始记录</button>
+          </form>
+          <pre id="rawAccessResult" tabindex="0">尚未发起突破性访问。</pre>
+        </section>
+      </section>
+
+      <section class="lab-panel" data-lab-panel="topology" aria-labelledby="labTopologyTitle">
+        <div class="lab-section-heading">
+          <div><p class="eyebrow">DETERMINISTIC TOPOLOGY</p><h3 id="labTopologyTitle">身份和拓扑来自哪里</h3></div>
+          <button class="secondary-button" data-action="seed-topology" type="button">恢复内置测试拓扑</button>
+        </div>
+        <p class="panel-explainer">自动合并必须满足：明确事故号，或准确设备身份＋已登记拓扑＋时间窗口＋兼容信号类型。只有文本相似时只提示，不自动合并。</p>
+        <div class="topology-canvas" id="labTopology" aria-live="polite"></div>
+        <section class="backup-card" aria-labelledby="backupTitle">
+          <div><p class="eyebrow">LOCAL RECOVERY</p><h3 id="backupTitle">数据库一致性备份</h3><p>当前版本备份事件、知识、提示词、平台信号和审计记录。生产高可用与异机容灾留到真实部署阶段。</p></div>
+          <button class="primary-button" data-action="create-backup" type="button">创建并校验备份</button>
+          <div class="backup-list" id="backupList" aria-live="polite"></div>
+        </section>
+      </section>
+    </div>
+  </dialog>
+
   <dialog class="work-dialog admin-dialog" id="adminDialog" aria-labelledby="adminTitle">
     <div class="dialog-frame admin-frame">
       <header class="dialog-header admin-header">
@@ -314,7 +435,7 @@
             <div><p class="eyebrow">EXPERIENCE ASSET</p><h3 id="knowledgePanelTitle">经验知识库</h3></div>
             <label class="inline-search">筛选知识<input id="knowledgeSearch" type="search" placeholder="磁盘、网络、温度、OMS…"></label>
           </header>
-          <p class="panel-explainer">已发布版本会参与后续故障分析。新的现场经验先保存成草稿，不会立刻改变线上判断。</p>
+          <p class="panel-explainer">已发布版本会参与后续故障分析。新经验先保存成草稿；结构检查只证明字段完整，不证明内容正确，发布前仍需人工核对来源、适用条件、禁用条件和现场风险。</p>
           <div class="asset-split">
             <div class="asset-list" id="knowledgeList" aria-label="知识卡列表"></div>
             <div class="asset-detail" id="knowledgeDetail" aria-live="polite"><div class="admin-empty">从左侧选择一条经验查看原文和版本。</div></div>
@@ -358,7 +479,7 @@
             <div><p class="eyebrow">SAFE RELEASE</p><h3 id="releasePanelTitle">测试、上线与回滚记录</h3></div>
             <button class="secondary-button" data-action="load-releases" type="button">刷新记录</button>
           </header>
-          <p class="panel-explainer">个人版由一名 AI 管理员完成两步确认；正式版可切换为双人审批。已发布版本可回滚到上一版。</p>
+          <p class="panel-explainer">个人版由一名 AI 管理员完成两步确认；正式版可切换为双人审批。页面会明确标出哪些只是结构检查，不能把“格式正确”写成“事实正确”。已发布版本可回滚。</p>
           <div class="release-list" id="releaseList" aria-live="polite"></div>
         </section>
 

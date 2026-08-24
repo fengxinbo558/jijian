@@ -8,19 +8,27 @@ import uuid
 from typing import Any, Dict, Iterable, List, Mapping, Optional
 
 from .ai import AIEnricher
+from .agent import AgentInvestigator
+from .agent_tools import AgentToolRegistry
+from .agent_trace import AgentTraceRecorder
 from .assets import AssetRegistry
+from .backups import BackupService
 from .admin import AdminService
 from .facility import assess_facility_event, strongest_assessment
 from .investigation import apply_model_enrichment, build_investigation, merge_investigations
 from .integrations import IntegrationHub
 from .knowledge import KnowledgeBase
+from .lab import IntegrationLab
+from .lab_scenarios import list_scenarios, scenario_events
 from .models import NormalizedInput, RuleAnalysis, utc_now
 from .operations import OperationService
 from .providers import ProviderRegistry
 from .rules import analyze_rules
 from .releases import ReleaseManager
 from .rag_trace import RagTraceRecorder
+from .raw_access import RawAccessService
 from .store import IncidentStore
+from .views import project_agent_run, project_incident, project_integration_event
 
 
 SEVERITY_RANK = {"unknown": 0, "info": 1, "warning": 2, "critical": 3}
@@ -139,11 +147,101 @@ class IncidentService:
         self.releases = ReleaseManager(store, self.assets)
         self.rag_traces = RagTraceRecorder(store, self.assets)
         self.operations = OperationService(store)
+        self.lab = IntegrationLab(store)
+        self.agent_traces = AgentTraceRecorder(store)
+        self.agent_tools = AgentToolRegistry(self.lab)
         self.providers = ProviderRegistry(store)
         self.providers.ensure_seeded()
         self.ai = ai or AIEnricher(self.assets)
+        self.agent = AgentInvestigator(
+            store, self.agent_tools, self.agent_traces, self.ai
+        )
+        self.raw_access = RawAccessService(store, self)
+        self.backups = BackupService(store)
         self.knowledge = knowledge or KnowledgeBase(registry=self.assets)
         self.integrations = integrations or IntegrationHub()
+
+    def ingest_platform_event(self, payload: Mapping[str, Any]) -> Dict[str, Any]:
+        """Accept one simulated platform event through the production-shaped boundary."""
+
+        prepared = self.lab.prepare_event(payload)
+        if prepared["duplicate"]:
+            event = prepared["event"]
+            incident = self.get_incident(event.get("incident_id", "")) if event.get("incident_id") else None
+            return {"accepted": bool(incident), "duplicate": True, "event": event, "incident": incident}
+        event = prepared["event"]
+        normalized = prepared["normalized"]
+        try:
+            incident = self.ingest(normalized["ingest_source"], normalized["ingest_payload"])
+        except Exception as exc:
+            self.lab.fail_event(event["id"], str(exc))
+            raise
+        correlation = dict(prepared.get("correlation") or {})
+        completed = self.lab.complete_event(
+            event["id"],
+            incident["id"],
+            str(incident.get("correlation_key", "")),
+            correlation,
+        )
+        return {"accepted": True, "duplicate": False, "event": completed, "incident": incident}
+
+    def list_lab_scenarios(self) -> list:
+        return list_scenarios()
+
+    def list_lab_events_for_default_view(self, limit: int = 200) -> list:
+        return [project_integration_event(item) for item in self.lab.list_events(limit)]
+
+    def ingest_platform_event_for_role(
+        self, payload: Mapping[str, Any], role: str
+    ) -> Dict[str, Any]:
+        result = self.ingest_platform_event(payload)
+        value = dict(result)
+        if value.get("event"):
+            value["event"] = project_integration_event(value["event"])
+        if value.get("incident"):
+            value["incident"] = project_incident(value["incident"], role)
+        return value
+
+    def run_lab_scenario(self, scenario_id: str) -> Dict[str, Any]:
+        results = [self.ingest_platform_event(item) for item in scenario_events(scenario_id)]
+        incident_ids = []
+        for result in results:
+            incident = result.get("incident") or {}
+            incident_id = str(incident.get("id") or "")
+            if incident_id and incident_id not in incident_ids:
+                incident_ids.append(incident_id)
+        return {
+            "scenario_id": scenario_id,
+            "deliveries": results,
+            "incident_ids": incident_ids,
+            "incidents": [self.get_incident(item) for item in incident_ids],
+        }
+
+    def run_lab_scenario_for_role(self, scenario_id: str, role: str) -> Dict[str, Any]:
+        result = self.run_lab_scenario(scenario_id)
+        return {
+            "scenario_id": result["scenario_id"],
+            "incident_ids": result["incident_ids"],
+            "deliveries": [
+                {
+                    "accepted": item.get("accepted"),
+                    "duplicate": item.get("duplicate"),
+                    "event": project_integration_event(item.get("event") or {}),
+                }
+                for item in result["deliveries"]
+            ],
+            "incidents": [
+                project_incident(item, role) for item in result["incidents"] if item
+            ],
+        }
+
+    def run_agent(
+        self, incident_id: str, mode: str = "baseline", max_rounds: int = 5
+    ) -> Dict[str, Any]:
+        incident = self.get_incident(incident_id)
+        if incident is None:
+            raise ValueError("事件不存在")
+        return self.agent.run(incident, mode, max_rounds)
 
     def ingest(self, source: str, payload: Mapping[str, Any]) -> Dict[str, Any]:
         event = normalize_input(source, payload)
@@ -406,8 +504,22 @@ class IncidentService:
     def list_incidents(self) -> List[Dict[str, Any]]:
         return self.store.list_incidents()
 
+    def list_incidents_for_role(self, role: str) -> List[Dict[str, Any]]:
+        return [project_incident(item, role) for item in self.store.list_incidents()]
+
     def get_incident(self, incident_id: str) -> Optional[Dict[str, Any]]:
         return self.store.get_incident(incident_id)
+
+    def get_incident_for_role(self, incident_id: str, role: str) -> Optional[Dict[str, Any]]:
+        incident = self.get_incident(incident_id)
+        return project_incident(incident, role) if incident is not None else None
+
+    def get_agent_run_for_default_view(self, run_id: str) -> Optional[Dict[str, Any]]:
+        run = self.agent_traces.get(run_id)
+        return project_agent_run(run) if run is not None else None
+
+    def list_agent_runs_for_default_view(self, incident_id: str = "") -> list:
+        return [project_agent_run(item) for item in self.agent_traces.list(incident_id)]
 
     def update_status(self, incident_id: str, status: str) -> Optional[Dict[str, Any]]:
         return self.store.update_status(incident_id, status)

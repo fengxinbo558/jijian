@@ -19,9 +19,11 @@ from .auth import (
     can_operate_onsite,
     can_review_operation,
     is_ai_admin,
+    is_super_admin,
     normalize_role,
 )
 from .demo_cases import DEMO_CASES, list_demos
+from .lab import PlatformUnavailable
 from .service import IncidentService
 from .store import IncidentStore
 
@@ -134,6 +136,14 @@ class RequestHandler(BaseHTTPRequestHandler):
                 if item is None:
                     raise APIError(HTTPStatus.NOT_FOUND, "RAG运行记录不存在")
                 self._json(HTTPStatus.OK, item)
+            elif path == "/api/admin/raw-access-audit":
+                self._require_super_admin()
+                self._json(
+                    HTTPStatus.OK,
+                    {"items": self.app.service.raw_access.list_audit()},
+                )
+            elif path == "/api/admin/backups":
+                self._json(HTTPStatus.OK, {"items": self.app.service.backups.list()})
             elif path == "/api/health":
                 source_statuses = self.app.service.source_statuses(check_external=False)
                 self._json(
@@ -166,8 +176,40 @@ class RequestHandler(BaseHTTPRequestHandler):
                 if item is None:
                     raise APIError(HTTPStatus.NOT_FOUND, "现场操作单不存在")
                 self._json(HTTPStatus.OK, item)
+            elif path == "/api/lab/platforms":
+                self._require_admin()
+                self._json(HTTPStatus.OK, {"items": self.app.service.lab.list_platforms()})
+            elif path == "/api/lab/events":
+                self._require_admin()
+                query = parse_qs(parsed_url.query)
+                limit = int(query.get("limit", ["200"])[0])
+                self._json(
+                    HTTPStatus.OK,
+                    {"items": self.app.service.list_lab_events_for_default_view(limit)},
+                )
+            elif path == "/api/lab/topology":
+                self._require_admin()
+                self._json(HTTPStatus.OK, self.app.service.lab.topology())
+            elif path == "/api/lab/scenarios":
+                self._require_admin()
+                self._json(HTTPStatus.OK, {"items": self.app.service.list_lab_scenarios()})
+            elif path == "/api/agent/runs":
+                self._require_admin()
+                query = parse_qs(parsed_url.query)
+                incident_id = query.get("incident_id", [""])[0]
+                self._json(
+                    HTTPStatus.OK,
+                    {"items": self.app.service.list_agent_runs_for_default_view(incident_id)},
+                )
+            elif path.startswith("/api/agent/runs/"):
+                self._require_admin()
+                run_id = unquote(path.removeprefix("/api/agent/runs/"))
+                item = self.app.service.get_agent_run_for_default_view(run_id)
+                if item is None:
+                    raise APIError(HTTPStatus.NOT_FOUND, "Agent调查记录不存在")
+                self._json(HTTPStatus.OK, item)
             elif path == "/api/incidents":
-                incidents = self.app.service.list_incidents()
+                incidents = self.app.service.list_incidents_for_role(self._role())
                 counts = {"new": 0, "processing": 0, "resolved": 0}
                 for incident in incidents:
                     counts[incident["status"]] = counts.get(incident["status"], 0) + 1
@@ -179,7 +221,7 @@ class RequestHandler(BaseHTTPRequestHandler):
                 )
             elif path.startswith("/api/incidents/"):
                 incident_id = unquote(path.removeprefix("/api/incidents/"))
-                incident = self.app.service.get_incident(incident_id)
+                incident = self.app.service.get_incident_for_role(incident_id, self._role())
                 if incident is None:
                     raise APIError(HTTPStatus.NOT_FOUND, "事件不存在")
                 self._json(HTTPStatus.OK, incident)
@@ -205,6 +247,22 @@ class RequestHandler(BaseHTTPRequestHandler):
             if path == "/api/admin/annotations":
                 result = self.app.service.admin.add_annotation(payload, self._actor())
                 self._json(HTTPStatus.CREATED, result)
+            elif path == "/api/admin/raw-access":
+                self._require_super_admin()
+                result = self.app.service.raw_access.open(
+                    str(payload.get("record_type") or ""),
+                    str(payload.get("record_id") or ""),
+                    str(payload.get("reason") or ""),
+                    self._actor(),
+                    self._role(),
+                    bool(payload.get("confirmed")),
+                )
+                self._json(HTTPStatus.OK, result)
+            elif path == "/api/admin/backups":
+                self._json(
+                    HTTPStatus.CREATED,
+                    self.app.service.backups.create(self._actor()),
+                )
             elif len(parts) == 5 and parts[:3] == ["api", "admin", "prompts"] and parts[4] == "versions":
                 result = self.app.service.assets.create_prompt_version(
                     parts[3], payload, self._actor()
@@ -248,6 +306,37 @@ class RequestHandler(BaseHTTPRequestHandler):
                     HTTPStatus.CREATED,
                     self.app.service.operations.import_work_order(payload, self._actor()),
                 )
+            elif path == "/api/lab/events":
+                self._require_admin()
+                result = self.app.service.ingest_platform_event_for_role(payload, self._role())
+                self._json(HTTPStatus.OK if result.get("duplicate") else HTTPStatus.CREATED, result)
+            elif path == "/api/agent/runs":
+                self._require_admin()
+                result = self.app.service.run_agent(
+                    str(payload.get("incident_id") or ""),
+                    str(payload.get("mode") or "baseline"),
+                    int(payload.get("max_rounds") or 5),
+                )
+                self._json(
+                    HTTPStatus.CREATED,
+                    self.app.service.get_agent_run_for_default_view(result["id"]),
+                )
+            elif path == "/api/lab/topology/seed":
+                self._require_admin()
+                self._json(HTTPStatus.OK, self.app.service.lab.seed_default_topology())
+            elif len(parts) == 5 and parts[:3] == ["api", "lab", "scenarios"] and parts[4] == "run":
+                self._require_admin()
+                result = self.app.service.run_lab_scenario_for_role(parts[3], self._role())
+                self._json(HTTPStatus.CREATED, result)
+            elif len(parts) == 5 and parts[:3] == ["api", "lab", "platforms"] and parts[4] == "state":
+                self._require_admin()
+                result = self.app.service.lab.set_platform_state(
+                    parts[3],
+                    str(payload.get("state") or ""),
+                    int(payload.get("latency_ms") or 0),
+                    str(payload.get("last_error") or ""),
+                )
+                self._json(HTTPStatus.OK, result)
             elif len(parts) == 4 and parts[:2] == ["api", "operations"] and parts[3] == "identity":
                 self._require_permission(can_operate_onsite(self._role()), "当前角色不能执行现场身份核对")
                 self._json(
@@ -338,6 +427,8 @@ class RequestHandler(BaseHTTPRequestHandler):
                 raise APIError(HTTPStatus.NOT_FOUND, "接口不存在")
         except APIError as exc:
             self._json(exc.status, {"error": exc.message})
+        except PlatformUnavailable as exc:
+            self._json(HTTPStatus.SERVICE_UNAVAILABLE, {"error": str(exc)})
         except (ValueError, TypeError, json.JSONDecodeError) as exc:
             self._json(HTTPStatus.BAD_REQUEST, {"error": str(exc)})
         except Exception as exc:  # noqa: BLE001
@@ -410,6 +501,10 @@ class RequestHandler(BaseHTTPRequestHandler):
     def _require_admin(self) -> None:
         if not is_ai_admin(self._role()):
             raise APIError(HTTPStatus.FORBIDDEN, "当前角色没有 AI 资产管理权限")
+
+    def _require_super_admin(self) -> None:
+        if not is_super_admin(self._role()):
+            raise APIError(HTTPStatus.FORBIDDEN, "仅最高管理员可突破性查看原始记录")
 
     @staticmethod
     def _require_permission(allowed: bool, message: str) -> None:

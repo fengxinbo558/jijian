@@ -376,6 +376,139 @@ class IncidentStore:
                     created_at TEXT NOT NULL,
                     FOREIGN KEY(operation_id) REFERENCES operation_cases(id)
                 );
+
+                CREATE TABLE IF NOT EXISTS integration_platforms (
+                    platform_key TEXT PRIMARY KEY,
+                    display_name TEXT NOT NULL,
+                    platform_type TEXT NOT NULL,
+                    connection_state TEXT NOT NULL,
+                    latency_ms INTEGER NOT NULL,
+                    config_json TEXT NOT NULL,
+                    last_error TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS integration_events (
+                    id TEXT PRIMARY KEY,
+                    platform_key TEXT NOT NULL,
+                    source_event_id TEXT NOT NULL,
+                    occurred_at TEXT NOT NULL,
+                    received_at TEXT NOT NULL,
+                    site TEXT NOT NULL,
+                    explicit_incident_key TEXT NOT NULL,
+                    derived_incident_key TEXT NOT NULL,
+                    entity_json TEXT NOT NULL,
+                    signal_type TEXT NOT NULL,
+                    severity TEXT NOT NULL,
+                    summary TEXT NOT NULL,
+                    raw_payload_json TEXT NOT NULL,
+                    normalized_json TEXT NOT NULL,
+                    field_provenance_json TEXT NOT NULL,
+                    delivery_status TEXT NOT NULL,
+                    incident_id TEXT NOT NULL,
+                    correlation_json TEXT NOT NULL,
+                    simulation INTEGER NOT NULL,
+                    created_at TEXT NOT NULL,
+                    FOREIGN KEY(platform_key) REFERENCES integration_platforms(platform_key),
+                    UNIQUE(platform_key, source_event_id)
+                );
+                CREATE INDEX IF NOT EXISTS idx_integration_events_time
+                    ON integration_events(site, occurred_at DESC);
+                CREATE INDEX IF NOT EXISTS idx_integration_events_incident
+                    ON integration_events(incident_id, occurred_at);
+
+                CREATE TABLE IF NOT EXISTS topology_entities (
+                    entity_id TEXT PRIMARY KEY,
+                    entity_type TEXT NOT NULL,
+                    canonical_key TEXT NOT NULL UNIQUE,
+                    attributes_json TEXT NOT NULL,
+                    source TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS topology_links (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    from_entity_id TEXT NOT NULL,
+                    to_entity_id TEXT NOT NULL,
+                    link_type TEXT NOT NULL,
+                    attributes_json TEXT NOT NULL,
+                    source TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    FOREIGN KEY(from_entity_id) REFERENCES topology_entities(entity_id),
+                    FOREIGN KEY(to_entity_id) REFERENCES topology_entities(entity_id),
+                    UNIQUE(from_entity_id, to_entity_id, link_type)
+                );
+                CREATE INDEX IF NOT EXISTS idx_topology_links_from
+                    ON topology_links(from_entity_id, link_type);
+                CREATE INDEX IF NOT EXISTS idx_topology_links_to
+                    ON topology_links(to_entity_id, link_type);
+
+                CREATE TABLE IF NOT EXISTS agent_runs (
+                    id TEXT PRIMARY KEY,
+                    incident_id TEXT NOT NULL,
+                    mode TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    model_provider TEXT NOT NULL,
+                    model_name TEXT NOT NULL,
+                    prompt_version TEXT NOT NULL,
+                    max_rounds INTEGER NOT NULL,
+                    stop_reason TEXT NOT NULL,
+                    summary_json TEXT NOT NULL,
+                    started_at TEXT NOT NULL,
+                    completed_at TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_agent_runs_incident
+                    ON agent_runs(incident_id, started_at DESC);
+
+                CREATE TABLE IF NOT EXISTS agent_steps (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    run_id TEXT NOT NULL,
+                    round_no INTEGER NOT NULL,
+                    step_type TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    rationale TEXT NOT NULL,
+                    input_json TEXT NOT NULL,
+                    tool_name TEXT NOT NULL,
+                    tool_args_json TEXT NOT NULL,
+                    tool_output_json TEXT NOT NULL,
+                    evidence_ids_json TEXT NOT NULL,
+                    hypotheses_before_json TEXT NOT NULL,
+                    hypotheses_after_json TEXT NOT NULL,
+                    validation_json TEXT NOT NULL,
+                    model_output_json TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    FOREIGN KEY(run_id) REFERENCES agent_runs(id),
+                    UNIQUE(run_id, round_no)
+                );
+
+                CREATE TABLE IF NOT EXISTS raw_access_audit (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    actor TEXT NOT NULL,
+                    role TEXT NOT NULL,
+                    record_type TEXT NOT NULL,
+                    record_id TEXT NOT NULL,
+                    reason TEXT NOT NULL,
+                    fields_json TEXT NOT NULL,
+                    created_at TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_raw_access_record
+                    ON raw_access_audit(record_type, record_id, created_at DESC);
+
+                CREATE TABLE IF NOT EXISTS backup_runs (
+                    id TEXT PRIMARY KEY,
+                    backup_type TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    path TEXT NOT NULL UNIQUE,
+                    size_bytes INTEGER NOT NULL,
+                    checksum TEXT NOT NULL,
+                    summary_json TEXT NOT NULL,
+                    requested_by TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    completed_at TEXT NOT NULL
+                );
                 """
             )
             columns = {
@@ -397,6 +530,13 @@ class IncidentStore:
                 """
                 INSERT OR IGNORE INTO schema_migrations (version, name, applied_at)
                 VALUES (2, 'onsite_work_order_operations', ?)
+                """,
+                (utc_now(),),
+            )
+            connection.execute(
+                """
+                INSERT OR IGNORE INTO schema_migrations (version, name, applied_at)
+                VALUES (3, 'ai_multiplatform_lab_foundation', ?)
                 """,
                 (utc_now(),),
             )

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 
-VALID_ROLES = {"onsite_operator", "facility_lead", "interface_person", "ai_admin"}
+VALID_ROLES = {"onsite_operator", "facility_lead", "interface_person", "ai_admin", "super_admin"}
 
 
 def normalize_role(value: str) -> str:
@@ -12,19 +12,23 @@ def normalize_role(value: str) -> str:
 
 
 def is_ai_admin(role: str) -> bool:
-    return normalize_role(role) == "ai_admin"
+    return normalize_role(role) in {"ai_admin", "super_admin"}
+
+
+def is_super_admin(role: str) -> bool:
+    return normalize_role(role) == "super_admin"
 
 
 def can_import_work_order(role: str) -> bool:
-    return normalize_role(role) in {"interface_person", "ai_admin"}
+    return normalize_role(role) in {"interface_person", "ai_admin", "super_admin"}
 
 
 def can_decide_permission(role: str) -> bool:
-    return normalize_role(role) in {"interface_person", "facility_lead", "ai_admin"}
+    return normalize_role(role) in {"interface_person", "facility_lead", "ai_admin", "super_admin"}
 
 
 def can_operate_onsite(role: str) -> bool:
-    return normalize_role(role) in {"onsite_operator", "ai_admin"}
+    return normalize_role(role) in {"onsite_operator", "ai_admin", "super_admin"}
 
 
 def can_review_operation(role: str) -> bool:
@@ -33,4 +37,5 @@ def can_review_operation(role: str) -> bool:
         "facility_lead",
         "interface_person",
         "ai_admin",
+        "super_admin",
     }

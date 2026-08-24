@@ -53,18 +53,45 @@ class ReleaseManager:
     def _checks(asset_type: str, target: Mapping[str, Any]) -> list:
         if asset_type == "prompt":
             return [
-                {"name": "用户模板非空", "passed": bool(target.get("user_template"))},
                 {
-                    "name": "输出结构有效",
-                    "passed": isinstance(target.get("output_schema"), (list, dict)),
+                    "name": "结构检查：用户模板非空",
+                    "passed": bool(target.get("user_template")),
+                    "scope": "structural",
+                    "does_not_prove": "不证明模型回答正确或适合生产故障",
                 },
-                {"name": "版本仍是草稿", "passed": target.get("release_status") == "draft"},
+                {
+                    "name": "结构检查：输出格式可读取",
+                    "passed": isinstance(target.get("output_schema"), (list, dict)),
+                    "scope": "structural",
+                    "does_not_prove": "不证明模型会始终遵守输出格式",
+                },
+                {
+                    "name": "流程检查：版本仍是草稿",
+                    "passed": target.get("release_status") == "draft",
+                    "scope": "workflow",
+                    "does_not_prove": "不证明事实准确率",
+                },
             ]
         content = target.get("content", {})
         return [
-            {"name": "知识ID一致", "passed": bool(content.get("id"))},
-            {"name": "知识标题非空", "passed": bool(content.get("title"))},
-            {"name": "知识领域非空", "passed": bool(content.get("domain"))},
+            {
+                "name": "结构检查：知识ID存在",
+                "passed": bool(content.get("id")),
+                "scope": "structural",
+                "does_not_prove": "不证明经验适用于所有设备或环境",
+            },
+            {
+                "name": "结构检查：知识标题非空",
+                "passed": bool(content.get("title")),
+                "scope": "structural",
+                "does_not_prove": "不证明内容事实正确",
+            },
+            {
+                "name": "结构检查：知识领域非空",
+                "passed": bool(content.get("domain")),
+                "scope": "structural",
+                "does_not_prove": "不证明现场步骤安全",
+            },
         ]
 
     def prepare(self, release_id: str) -> Dict[str, Any]:

@@ -10,6 +10,16 @@ const state = {
   actor: localStorage.getItem("idcai-actor") || "local-admin",
   operations: [],
   selectedOperation: null,
+  lab: {
+    tab: "signals",
+    platforms: [],
+    scenarios: [],
+    events: [],
+    topology: { entities: [], links: [] },
+    agentRuns: [],
+    selectedAgentRun: null,
+    backups: [],
+  },
   admin: {
     tab: "database",
     summary: null,
@@ -66,6 +76,7 @@ const adminDialog = document.querySelector("#adminDialog");
 const publishConfirmDialog = document.querySelector("#publishConfirmDialog");
 const operationDialog = document.querySelector("#operationDialog");
 const cameraDialog = document.querySelector("#cameraDialog");
+const labDialog = document.querySelector("#labDialog");
 
 function escapeHtml(value) {
   return String(value ?? "")
@@ -687,13 +698,17 @@ async function runInvestigation(button) {
 }
 
 function openDialog(dialog) {
+  dialog._returnFocus = document.activeElement;
   if (typeof dialog.showModal === "function") dialog.showModal();
   else dialog.setAttribute("open", "");
+  window.requestAnimationFrame(() => dialog.querySelector("button, input, select, textarea")?.focus());
 }
 
 function closeDialog(dialog) {
   if (typeof dialog.close === "function") dialog.close();
   else dialog.removeAttribute("open");
+  const target = dialog._returnFocus;
+  if (target && typeof target.focus === "function") target.focus();
 }
 
 function formObject(form) {
@@ -774,6 +789,15 @@ const roleNames = {
   facility_lead: "机房组长",
   interface_person: "系统/网络接口人",
   ai_admin: "AI 管理员",
+  super_admin: "最高管理员",
+};
+
+const roleBriefs = {
+  onsite_operator: ["现场作业", "核对完整 SN、机架位与许可", "只看现场需要的信息；高风险动作必须等人工确认。"],
+  facility_lead: ["机房协调", "看待处理、复核与升级", "关注人员分配、双岗复核、CC条件和超时。"],
+  interface_person: ["系统 / 网络调查", "看证据、候选原因与缺口", "向现场下发清晰检查项，并确认操作许可。"],
+  ai_admin: ["AI 运营", "管理知识、提示词与模拟接入", "能调试但默认看脱敏轨迹，不能突破查看原文。"],
+  super_admin: ["全局审计", "复核 AI 每轮依据与数据来源", "必要时可填写原因、再次确认后查看原始记录。"],
 };
 
 const ragStepNames = {
@@ -792,7 +816,12 @@ function jsonText(value) {
 }
 
 function defaultActorForRole(role) {
-  return { onsite_operator: "onsite-a", facility_lead: "lead-a", interface_person: "sim-a", ai_admin: "local-admin" }[role] || "onsite-a";
+  return { onsite_operator: "onsite-a", facility_lead: "lead-a", interface_person: "sim-a", ai_admin: "ai-admin-a", super_admin: "root-auditor" }[role] || "onsite-a";
+}
+
+function renderRoleBrief() {
+  const [kicker, title, note] = roleBriefs[state.role] || roleBriefs.onsite_operator;
+  document.querySelector("#roleBrief").innerHTML = `<small>${escapeHtml(kicker)}</small><strong>${escapeHtml(title)}</strong><span>${escapeHtml(note)}</span>`;
 }
 
 function setRole(role, preserveActor = false) {
@@ -804,10 +833,16 @@ function setRole(role, preserveActor = false) {
   document.querySelector("#roleSelect").value = state.role;
   document.querySelector("#userIdentity").value = state.actor;
   const adminButton = document.querySelector("#adminRailButton");
-  const isAdmin = state.role === "ai_admin";
+  const labButton = document.querySelector("#labRailButton");
+  const isAdmin = ["ai_admin", "super_admin"].includes(state.role);
   adminButton.classList.toggle("is-locked", !isAdmin);
   adminButton.setAttribute("aria-description", isAdmin ? "打开数据与 AI 管理" : "仅 AI 管理员可以打开");
+  labButton.classList.toggle("is-locked", !isAdmin);
+  labButton.setAttribute("aria-description", isAdmin ? "打开接入实验室" : "仅 AI 管理员与最高管理员可以打开");
+  document.querySelector("#breakGlassPanel").hidden = state.role !== "super_admin";
+  renderRoleBrief();
   showToast(`已切换到${roleNames[state.role]}工作台，当前账号 ${state.actor}`);
+  if (state.incidents.length) loadIncidents(state.selectedId).catch((error) => showToast(error.message, true));
 }
 
 function adminSummaryCard(label, value, note) {
@@ -850,8 +885,8 @@ function activateAdminTab(name) {
 }
 
 async function openAdmin() {
-  if (state.role !== "ai_admin") {
-    showToast(`当前是${roleNames[state.role]}工作台，只有 AI 管理员能修改数据与 AI 资产`, true);
+  if (!["ai_admin", "super_admin"].includes(state.role)) {
+    showToast(`当前是${roleNames[state.role]}工作台，只有 AI 管理员或最高管理员能修改数据与 AI 资产`, true);
     return;
   }
   openDialog(adminDialog);
@@ -1046,13 +1081,13 @@ async function testAsset(button) {
     method: "POST",
     body: JSON.stringify({ asset_type: button.dataset.assetType, asset_key: button.dataset.assetKey, version: button.dataset.version }),
   });
-  showToast(`版本 ${release.version} 已通过发布前检查`);
+  showToast(`版本 ${release.version} 已通过结构与流程检查；这不代表事实内容已经验证`);
   await loadReleases();
   activateAdminTab("releases");
 }
 
 function releaseStatusName(status) {
-  return { tested: "测试通过", prepared: "等待最终确认", published: "已上线", rolled_back: "已回滚" }[status] || status;
+  return { tested: "结构检查通过", prepared: "等待人工最终确认", published: "已上线", rolled_back: "已回滚" }[status] || status;
 }
 
 async function loadReleases() {
@@ -1061,7 +1096,7 @@ async function loadReleases() {
   document.querySelector("#releaseList").innerHTML = state.admin.releases.length ? state.admin.releases.map((item) => `
     <article class="release-row" data-release-status="${escapeHtml(item.status)}">
       <div><small>${escapeHtml(item.asset_type)} · ${escapeHtml(item.asset_key)}</small><strong>${escapeHtml(item.version)}</strong><span>${escapeHtml(item.id)} · ${escapeHtml(formatTime(item.created_at))}</span></div>
-      <div class="release-checks">${(item.test_summary || []).map((check) => `<span data-passed="${check.passed ? "yes" : "no"}">${check.passed ? "✓" : "×"} ${escapeHtml(check.name)}</span>`).join("")}</div>
+      <div class="release-checks">${(item.test_summary || []).map((check) => `<span data-passed="${check.passed ? "yes" : "no"}" title="${escapeHtml(check.does_not_prove || "")}">${check.passed ? "✓" : "×"} ${escapeHtml(check.name)}</span>`).join("")}</div>
       <strong class="release-status">${escapeHtml(releaseStatusName(item.status))}</strong>
       <div class="release-actions">
         ${item.status === "tested" ? `<button class="primary-button" data-action="prepare-release" data-release-id="${escapeHtml(item.id)}" type="button">第 1 步：准备上线</button>` : ""}
@@ -1385,6 +1420,252 @@ async function scanOperationSN() {
   }
 }
 
+const labConnectionNames = {
+  connected: "已连接",
+  disconnected: "已断开",
+  degraded: "降级返回",
+  delayed: "延迟返回",
+  permission_denied: "权限不足",
+  invalid_payload: "无效结构",
+};
+
+const correlationNames = {
+  explicit: "明确事故号",
+  topology_time_window: "拓扑＋时间窗口",
+  exact_identity_time_window: "准确身份＋时间窗口",
+  insufficient: "证据不足，不自动合并",
+};
+
+function activateLabTab(name) {
+  state.lab.tab = name;
+  document.querySelectorAll("[data-lab-tab]").forEach((button) => {
+    button.classList.toggle("is-active", button.dataset.labTab === name);
+  });
+  document.querySelectorAll("[data-lab-panel]").forEach((panel) => {
+    panel.classList.toggle("is-active", panel.dataset.labPanel === name);
+  });
+}
+
+function renderLabPlatforms() {
+  const states = Object.entries(labConnectionNames);
+  document.querySelector("#labPlatformGrid").innerHTML = state.lab.platforms.map((platform) => `
+    <article class="platform-card" data-state="${escapeHtml(platform.connection_state)}">
+      <header><div><small class="eyebrow">${escapeHtml(platform.platform_type)}</small><h4>${escapeHtml(platform.display_name)}</h4></div><span class="platform-state">${escapeHtml(labConnectionNames[platform.connection_state] || platform.connection_state)}</span></header>
+      <p>${escapeHtml(platform.config?.description || "模拟平台")}</p>
+      <footer>
+        <label>模拟连接状态<select data-platform-state="${escapeHtml(platform.platform_key)}">${states.map(([value, label]) => `<option value="${value}" ${value === platform.connection_state ? "selected" : ""}>${escapeHtml(label)}</option>`).join("")}</select></label>
+        <button class="secondary-button" data-action="set-platform-state" data-platform-key="${escapeHtml(platform.platform_key)}" type="button">应用</button>
+      </footer>
+      <small>${platform.event_count || 0} 条信号 · ${platform.last_event_at ? `最近 ${escapeHtml(formatTime(platform.last_event_at))}` : "尚无输入"}</small>
+    </article>`).join("");
+}
+
+function renderLabScenarios() {
+  document.querySelector("#labScenarioList").innerHTML = state.lab.scenarios.map((scenario) => `
+    <article class="lab-scenario"><div><strong>${escapeHtml(scenario.name)}</strong><span>${escapeHtml(scenario.description)}</span></div><button class="secondary-button" data-action="run-lab-scenario" data-scenario-id="${escapeHtml(scenario.id)}" type="button">运行场景</button></article>`).join("") || `<div class="admin-empty">没有可用的跨平台场景。</div>`;
+}
+
+function renderLabEvents() {
+  const target = document.querySelector("#labEventList");
+  if (!state.lab.events.length) {
+    target.innerHTML = `<div class="admin-empty">尚无平台信号。运行场景或手工发送一条事件。</div>`;
+    return;
+  }
+  target.innerHTML = state.lab.events.slice(0, 80).map((item) => {
+    const correlation = item.correlation || {};
+    const entity = item.entity || {};
+    const identity = entity.sn || entity.name || entity.asset_id || "身份缺失";
+    const method = correlation.method || correlation.level || "insufficient";
+    return `<article class="signal-entry">
+      <div><small>${escapeHtml(item.platform_key)} · ${escapeHtml(formatTime(item.occurred_at))}</small><strong>${escapeHtml(identity)}</strong><span>${escapeHtml(entity.interface || entity.rack_position || item.signal_type)}</span></div>
+      <div><small>${escapeHtml(item.id)} · ${escapeHtml(item.source_event_id)}</small><strong>${escapeHtml(item.summary)}</strong><span>状态：${escapeHtml(item.delivery_status)} · 信号：${escapeHtml(item.signal_type)}</span></div>
+      <div class="correlation-stamp"><small>归并依据</small><strong>${escapeHtml(correlationNames[method] || method)}</strong><span>${item.incident_id ? `进入 ${escapeHtml(item.incident_id)}` : "未形成事故"}</span></div>
+    </article>`;
+  }).join("");
+}
+
+function renderAgentIncidentOptions() {
+  const select = document.querySelector("#agentIncidentSelect");
+  const current = select.value || state.selectedId || "";
+  select.innerHTML = state.incidents.map((incident) => `<option value="${escapeHtml(incident.id)}" ${incident.id === current ? "selected" : ""}>${escapeHtml(incident.id)} · ${escapeHtml(incident.title)}</option>`).join("");
+  if (!state.incidents.length) select.innerHTML = `<option value="">请先运行一个场景</option>`;
+}
+
+function renderAgentRuns() {
+  const target = document.querySelector("#agentRunList");
+  if (!state.lab.agentRuns.length) {
+    target.innerHTML = `<div class="admin-empty">还没有 AI 调查运行记录。</div>`;
+    return;
+  }
+  target.innerHTML = state.lab.agentRuns.map((run) => `
+    <button class="agent-run-row ${state.lab.selectedAgentRun?.id === run.id ? "is-selected" : ""}" data-agent-run-id="${escapeHtml(run.id)}" type="button">
+      <small>${escapeHtml(run.id)} · ${escapeHtml(formatTime(run.started_at))}</small>
+      <strong>${escapeHtml(run.mode === "model" ? "真实模型 Agent" : run.mode === "test_stub" ? "测试模型桩（非真实AI）" : "固定规则基线")}</strong>
+      <span>${escapeHtml(run.status)} · ${escapeHtml(run.stop_reason || "运行中")}</span>
+    </button>`).join("");
+}
+
+function renderAgentTrace(run) {
+  const target = document.querySelector("#agentTraceDetail");
+  if (!run) {
+    target.innerHTML = `<div class="admin-empty">运行或选择一次调查，查看每轮依据、工具、证据和假设变化。</div>`;
+    return;
+  }
+  const label = run.summary?.label || (run.mode === "model" ? "真实模型 Agent" : run.mode);
+  if (state.role !== "super_admin") {
+    target.innerHTML = `<div class="agent-trace-head"><div><p class="eyebrow">${escapeHtml(run.id)}</p><h3>${escapeHtml(label)}</h3><p>${escapeHtml(run.stop_reason || run.status)}</p></div><span class="safety-badge">默认脱敏</span></div>
+      <div class="panel-explainer">AI 管理员可以运行调试并查看结果摘要；逐轮模型依据、工具返回和假设变化只在“最高管理员”工作台显示。</div>
+      <pre>${escapeHtml(jsonText(run.summary || {}))}</pre>`;
+    return;
+  }
+  const steps = run.steps || [];
+  target.innerHTML = `<div class="agent-trace-head"><div><p class="eyebrow">${escapeHtml(run.id)} · ${escapeHtml(run.prompt_version)}</p><h3>${escapeHtml(label)}</h3><p>${escapeHtml(run.stop_reason || run.status)}</p></div><span class="safety-badge">结构化可审计轨迹</span></div>
+    ${steps.map((step) => `<details class="trace-step" ${step.round_no === 1 ? "open" : ""}>
+      <summary><small>ROUND ${escapeHtml(step.round_no)}</small><strong>${escapeHtml(step.rationale || step.step_type)}</strong><span>${escapeHtml(step.tool_name || step.status)}</span></summary>
+      <div class="trace-step-body">
+        <section><h4>本轮依据、证据与假设变化</h4><pre>${escapeHtml(jsonText({
+          evidence_ids: step.evidence_ids,
+          hypotheses_before: step.hypotheses_before,
+          hypotheses_after: step.hypotheses_after,
+          validation: step.validation,
+        }))}</pre></section>
+        <section><h4>只读工具调用与结构化返回</h4><pre>${escapeHtml(jsonText({
+          tool: step.tool_name,
+          arguments: step.tool_args,
+          output: step.tool_output,
+          model_decision: step.model_output,
+        }))}</pre></section>
+      </div>
+    </details>`).join("") || `<div class="admin-empty">这次运行没有产生调查轮次。</div>`}`;
+}
+
+function renderLabTopology() {
+  const topology = state.lab.topology || { entities: [], links: [] };
+  const priority = { switch: 1, interface: 2, server: 3, application: 4, facility_zone: 5 };
+  const entities = [...(topology.entities || [])].sort((a, b) => (priority[a.entity_type] || 9) - (priority[b.entity_type] || 9));
+  const links = topology.links || [];
+  document.querySelector("#labTopology").innerHTML = entities.map((entity) => `<article class="topology-node"><small>${escapeHtml(entity.entity_type)} · ${escapeHtml(entity.source)}</small><strong>${escapeHtml(entity.canonical_key)}</strong><span>${escapeHtml(Object.values(entity.attributes || {}).filter(Boolean).join(" · "))}</span></article>`).join("") + `<div class="topology-links">${links.map((link) => `${escapeHtml(link.from_entity_id)} —[${escapeHtml(link.link_type)}]→ ${escapeHtml(link.to_entity_id)}`).join("<br>")}</div>`;
+}
+
+function renderBackups() {
+  const target = document.querySelector("#backupList");
+  target.innerHTML = state.lab.backups.map((item) => `<div class="backup-row"><strong>${escapeHtml(item.id)} · ${escapeHtml(item.status)}</strong><code>${escapeHtml(item.path)}</code><span>${escapeHtml(String(item.size_bytes || 0))} bytes · ${escapeHtml(formatTime(item.completed_at))}</span></div>`).join("") || `<div class="admin-empty">尚未创建本地数据库备份。</div>`;
+}
+
+async function loadLab() {
+  const [platforms, scenarios, events, topology, runs, backups] = await Promise.all([
+    api("/api/lab/platforms"),
+    api("/api/lab/scenarios"),
+    api("/api/lab/events?limit=200"),
+    api("/api/lab/topology"),
+    api("/api/agent/runs"),
+    api("/api/admin/backups"),
+  ]);
+  state.lab.platforms = platforms.items || [];
+  state.lab.scenarios = scenarios.items || [];
+  state.lab.events = events.items || [];
+  state.lab.topology = topology;
+  state.lab.agentRuns = runs.items || [];
+  state.lab.backups = backups.items || [];
+  renderLabPlatforms();
+  renderLabScenarios();
+  renderLabEvents();
+  renderAgentIncidentOptions();
+  renderAgentRuns();
+  renderLabTopology();
+  renderBackups();
+  if (state.lab.selectedAgentRun) renderAgentTrace(state.lab.selectedAgentRun);
+}
+
+async function openLab() {
+  if (!["ai_admin", "super_admin"].includes(state.role)) {
+    showToast(`当前是${roleNames[state.role]}工作台，接入模拟与 AI 调试只对管理员开放`, true);
+    return;
+  }
+  openDialog(labDialog);
+  activateLabTab(state.lab.tab);
+  try {
+    await loadLab();
+  } catch (error) {
+    showToast(`实验室加载失败：${error.message}`, true);
+  }
+}
+
+async function setLabPlatformState(button) {
+  const key = button.dataset.platformKey;
+  const select = document.querySelector(`[data-platform-state="${CSS.escape(key)}"]`);
+  await api(`/api/lab/platforms/${encodeURIComponent(key)}/state`, {
+    method: "POST",
+    body: JSON.stringify({ state: select.value, latency_ms: select.value === "delayed" ? 800 : 0 }),
+  });
+  showToast(`${key} 已切换为${labConnectionNames[select.value]}`);
+  await loadLab();
+}
+
+async function runLabScenario(button) {
+  const original = button.textContent;
+  button.disabled = true;
+  button.textContent = "逐条发送中…";
+  try {
+    const result = await api(`/api/lab/scenarios/${encodeURIComponent(button.dataset.scenarioId)}/run`, { method: "POST", body: "{}" });
+    showToast(`场景已送入统一接口，形成 ${result.incident_ids?.length || 0} 个事故`);
+    await loadIncidents(result.incident_ids?.[0]);
+    await loadLab();
+  } finally {
+    button.disabled = false;
+    button.textContent = original;
+  }
+}
+
+async function submitLabEvent(form) {
+  const payload = JSON.parse(new FormData(form).get("payload"));
+  const result = await api("/api/lab/events", { method: "POST", body: JSON.stringify(payload) });
+  showToast(result.duplicate ? "相同来源事件已存在，本次没有重复创建" : `信号已进入事故 ${result.incident?.id || "待形成"}`);
+  await loadIncidents(result.incident?.id);
+  await loadLab();
+}
+
+async function runAgentFromLab(form) {
+  const payload = Object.fromEntries(new FormData(form).entries());
+  payload.max_rounds = Number(payload.max_rounds || 5);
+  const run = await api("/api/agent/runs", { method: "POST", body: JSON.stringify(payload) });
+  state.lab.selectedAgentRun = run;
+  showToast(run.summary?.real_ai ? "真实 AI 只读调查已完成" : `${run.summary?.label || "调查运行"}已记录`);
+  await loadLab();
+  await selectAgentRun(run.id);
+}
+
+async function selectAgentRun(runId) {
+  const run = await api(`/api/agent/runs/${encodeURIComponent(runId)}`);
+  state.lab.selectedAgentRun = run;
+  renderAgentRuns();
+  renderAgentTrace(run);
+  const rawId = document.querySelector('#rawAccessForm [name="record_id"]');
+  if (rawId && state.role === "super_admin") rawId.value = run.id;
+}
+
+async function createBackup(button) {
+  const original = button.textContent;
+  button.disabled = true;
+  button.textContent = "正在备份并校验…";
+  try {
+    const backup = await api("/api/admin/backups", { method: "POST", body: "{}" });
+    showToast(backup.status === "verified" ? "备份已创建并通过恢复校验" : "备份校验未通过", backup.status !== "verified");
+    await loadLab();
+  } finally {
+    button.disabled = false;
+    button.textContent = original;
+  }
+}
+
+async function openRawAccess(form) {
+  const payload = Object.fromEntries(new FormData(form).entries());
+  payload.confirmed = form.elements.confirmed.checked;
+  const result = await api("/api/admin/raw-access", { method: "POST", body: JSON.stringify(payload) });
+  document.querySelector("#rawAccessResult").textContent = jsonText(result);
+  showToast(`原始记录已打开，审计编号 ${result.audit_id}`);
+}
+
 async function closeCamera() {
   await window.IDCAIDeviceScan?.stopScan();
   closeDialog(cameraDialog);
@@ -1406,7 +1687,13 @@ document.addEventListener("click", (event) => {
     loadFacilities().catch((error) => showToast(error.message, true));
   }
   if (action === "open-admin") openAdmin();
+  if (action === "open-lab") openLab();
   if (action === "open-operations") openOperations().catch((error) => showToast(error.message, true));
+  if (action === "refresh-lab") loadLab().catch((error) => showToast(error.message, true));
+  if (action === "set-platform-state") setLabPlatformState(event.target.closest("[data-action]")).catch((error) => showToast(error.message, true));
+  if (action === "run-lab-scenario") runLabScenario(event.target.closest("[data-action]")).catch((error) => showToast(error.message, true));
+  if (action === "seed-topology") api("/api/lab/topology/seed", { method: "POST", body: "{}" }).then(loadLab).then(() => showToast("内置测试拓扑已恢复")).catch((error) => showToast(error.message, true));
+  if (action === "create-backup") createBackup(event.target.closest("[data-action]")).catch((error) => showToast(error.message, true));
   if (action === "start-operation") startOperation(event.target.closest("[data-action]").dataset.operationId).catch((error) => showToast(error.message, true));
   if (action === "scan-sn") scanOperationSN();
   if (action === "close-camera") closeCamera();
@@ -1453,6 +1740,12 @@ document.addEventListener("click", (event) => {
 
   const adminTab = event.target.closest("[data-admin-tab]")?.dataset.adminTab;
   if (adminTab) activateAdminTab(adminTab);
+
+  const labTab = event.target.closest("[data-lab-tab]")?.dataset.labTab;
+  if (labTab) activateLabTab(labTab);
+
+  const agentRunButton = event.target.closest("[data-agent-run-id]");
+  if (agentRunButton) selectAgentRun(agentRunButton.dataset.agentRunId).catch((error) => showToast(error.message, true));
 
   const knowledgeButton = event.target.closest(".asset-row[data-knowledge-id]");
   if (knowledgeButton) selectKnowledge(knowledgeButton.dataset.knowledgeId).catch((error) => showToast(error.message, true));
@@ -1501,6 +1794,21 @@ document.addEventListener("submit", (event) => {
   if (event.target.matches("#providerForm")) {
     event.preventDefault();
     saveProvider(event.target).catch((error) => showToast(`适配配置保存失败：${error.message}`, true));
+    return;
+  }
+  if (event.target.matches("#labEventForm")) {
+    event.preventDefault();
+    submitLabEvent(event.target).catch((error) => showToast(`平台信号发送失败：${error.message}`, true));
+    return;
+  }
+  if (event.target.matches("#agentRunForm")) {
+    event.preventDefault();
+    runAgentFromLab(event.target).catch((error) => showToast(`AI 调查启动失败：${error.message}`, true));
+    return;
+  }
+  if (event.target.matches("#rawAccessForm")) {
+    event.preventDefault();
+    openRawAccess(event.target).catch((error) => showToast(`原始记录访问失败：${error.message}`, true));
   }
 });
 
@@ -1580,7 +1888,7 @@ document.querySelector("#publishConfirmForm").addEventListener("submit", (event)
   publishRelease(releaseId).catch((error) => showToast(error.message, true));
 });
 
-for (const dialog of [ingestDialog, demoDialog, sourceDialog, facilityDialog, adminDialog, publishConfirmDialog, operationDialog]) {
+for (const dialog of [ingestDialog, demoDialog, sourceDialog, facilityDialog, adminDialog, publishConfirmDialog, operationDialog, labDialog]) {
   dialog.addEventListener("click", (event) => {
     if (event.target === dialog) closeDialog(dialog);
   });

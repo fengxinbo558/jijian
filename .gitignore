@@ -3,5 +3,5 @@ __pycache__/
 .DS_Store
 data/*.db
 data/*.db-*
+data/backups/
 .env
-
