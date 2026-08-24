@@ -39,6 +39,10 @@
           <span class="rail-icon" aria-hidden="true">管</span>
           <span>数据与AI</span>
         </button>
+        <button class="rail-button" data-action="open-operations" type="button">
+          <span class="rail-icon" aria-hidden="true">操</span>
+          <span>现场操作</span>
+        </button>
       </nav>
       <div class="rail-footer">
         <label class="role-picker" for="roleSelect">
@@ -46,9 +50,14 @@
           <select id="roleSelect">
             <option value="onsite_operator">现场人员</option>
             <option value="facility_lead">机房组长</option>
-            <option value="interface_engineer">系统/网络接口人</option>
+            <option value="interface_person">系统/网络接口人</option>
             <option value="ai_admin" selected>AI 管理员</option>
           </select>
+        </label>
+        <label class="role-picker" for="userIdentity">
+          <span>当前账号</span>
+          <input id="userIdentity" value="local-admin" aria-describedby="userIdentityHint">
+          <small id="userIdentityHint" class="sr-only">用于操作记录和双人复核身份区分</small>
         </label>
         <div class="system-pulse" id="systemPulse" title="本地服务状态">
           <span class="pulse-dot" aria-hidden="true"></span>
@@ -360,7 +369,53 @@
     </form>
   </dialog>
 
+  <dialog class="work-dialog operation-dialog" id="operationDialog" aria-labelledby="operationTitle">
+    <div class="dialog-frame operation-frame">
+      <header class="dialog-header operation-header">
+        <div>
+          <p class="eyebrow">ONSITE OPERATION CONTROL</p>
+          <h2 id="operationTitle">现场操作与双岗复核</h2>
+          <p>工单快照、设备身份、操作许可和人工复核是四件独立的事。全部通过后才允许开始操作。</p>
+        </div>
+        <button class="icon-button" data-close-dialog type="button" aria-label="关闭现场操作">×</button>
+      </header>
+      <div class="operation-session" id="operationSession"></div>
+      <details class="oms-import" id="omsImportSection">
+        <summary>从 OMS 工单建立操作记录</summary>
+        <p>当前没有真实 OMS 接口，因此先支持人工导入不可变快照；以后接接口时替换入口，历史快照不变。</p>
+        <form id="workOrderImportForm" class="operation-form">
+          <div class="form-grid compact-fields">
+            <label>OMS 工单号<input name="order_no" required placeholder="OMS-20260824-001"></label>
+            <label>机房编码<input name="site" required value="BJYZ"></label>
+            <label>目标完整 SN<input name="target_sn" required placeholder="必须完整输入"></label>
+            <label>机架位<input name="rack_position" required placeholder="机柜与U位"></label>
+            <label>设备名<input name="device_name"></label>
+            <label>操作类型<select name="operation_type"><option value="inspect">检查</option><option value="replace_disk">更换硬盘</option><option value="replace_memory">更换内存</option><option value="replace_module">更换光模块</option><option value="cable_operation">线缆操作</option><option value="power_cycle">重启/断电操作</option></select></label>
+            <label>紧急程度<select name="urgency"><option value="normal">普通</option><option value="urgent">紧急</option></select></label>
+            <label>是否从重装中发起<select name="from_reinstall"><option value="no">否</option><option value="yes">是</option><option value="unknown">未知</option></select></label>
+            <label>工单中的操作许可<select name="power_policy"><option value="needs_confirmation">需要接口人确认</option><option value="allowed">已允许</option><option value="forbidden">禁止操作</option></select></label>
+          </div>
+          <footer class="form-actions"><button class="primary-button" type="submit">保存工单快照</button></footer>
+        </form>
+      </details>
+      <div class="operation-layout">
+        <aside class="operation-list" id="operationList" aria-label="现场操作单列表"></aside>
+        <section class="operation-detail" id="operationDetail" aria-live="polite"><div class="admin-empty">选择一张操作单开始核对。</div></section>
+      </div>
+    </div>
+  </dialog>
+
+  <dialog class="camera-dialog" id="cameraDialog" aria-labelledby="cameraTitle">
+    <div class="camera-card">
+      <header><div><p class="eyebrow">LOCAL BARCODE SCAN</p><h2 id="cameraTitle">扫描完整 SN 条码</h2></div><button class="icon-button" data-action="close-camera" type="button" aria-label="关闭扫码">×</button></header>
+      <video id="scannerVideo" playsinline muted aria-label="扫码摄像头画面"></video>
+      <p id="scannerStatus" role="status">摄像头画面只在本机识别；条码成功后不保存画面。</p>
+      <button class="secondary-button" data-action="close-camera" type="button">取消扫码，改用 OCR 或手工输入</button>
+    </div>
+  </dialog>
+
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  <script src="/device-scan.js" defer></script>
   <script src="/app.js" defer></script>
 </body>
 </html>

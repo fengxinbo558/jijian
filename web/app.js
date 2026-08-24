@@ -7,6 +7,9 @@ const state = {
   filter: "all",
   query: "",
   role: localStorage.getItem("idcai-role") || "ai_admin",
+  actor: localStorage.getItem("idcai-actor") || "local-admin",
+  operations: [],
+  selectedOperation: null,
   admin: {
     tab: "database",
     summary: null,
@@ -59,6 +62,8 @@ const sourceDialog = document.querySelector("#sourceDialog");
 const facilityDialog = document.querySelector("#facilityDialog");
 const adminDialog = document.querySelector("#adminDialog");
 const publishConfirmDialog = document.querySelector("#publishConfirmDialog");
+const operationDialog = document.querySelector("#operationDialog");
+const cameraDialog = document.querySelector("#cameraDialog");
 
 function escapeHtml(value) {
   return String(value ?? "")
@@ -92,7 +97,7 @@ async function api(path, options = {}) {
     headers: {
       "Content-Type": "application/json",
       "X-IDCAI-Role": state.role,
-      "X-IDCAI-User": "local-admin",
+      "X-IDCAI-User": state.actor,
       ...(options.headers || {}),
     },
   });
@@ -765,7 +770,7 @@ async function runDemo(demoId, button) {
 const roleNames = {
   onsite_operator: "现场人员",
   facility_lead: "机房组长",
-  interface_engineer: "系统/网络接口人",
+  interface_person: "系统/网络接口人",
   ai_admin: "AI 管理员",
 };
 
@@ -784,16 +789,23 @@ function jsonText(value) {
   return JSON.stringify(value ?? {}, null, 2);
 }
 
-function setRole(role) {
+function defaultActorForRole(role) {
+  return { onsite_operator: "onsite-a", facility_lead: "lead-a", interface_person: "sim-a", ai_admin: "local-admin" }[role] || "onsite-a";
+}
+
+function setRole(role, preserveActor = false) {
   state.role = roleNames[role] ? role : "onsite_operator";
+  if (!preserveActor) state.actor = defaultActorForRole(state.role);
   localStorage.setItem("idcai-role", state.role);
+  localStorage.setItem("idcai-actor", state.actor);
   document.body.dataset.role = state.role;
   document.querySelector("#roleSelect").value = state.role;
+  document.querySelector("#userIdentity").value = state.actor;
   const adminButton = document.querySelector("#adminRailButton");
   const isAdmin = state.role === "ai_admin";
   adminButton.classList.toggle("is-locked", !isAdmin);
   adminButton.setAttribute("aria-description", isAdmin ? "打开数据与 AI 管理" : "仅 AI 管理员可以打开");
-  showToast(`已切换到${roleNames[state.role]}工作台`);
+  showToast(`已切换到${roleNames[state.role]}工作台，当前账号 ${state.actor}`);
 }
 
 function adminSummaryCard(label, value, note) {
@@ -1119,6 +1131,198 @@ async function selectRagRun(runId) {
     </section>`;
 }
 
+const operationStatusNames = {
+  awaiting_identity: "等待核对设备身份",
+  blocked_identity: "设备身份不一致，已阻止",
+  awaiting_permission: "等待接口人确认许可",
+  blocked_permission: "当前禁止操作",
+  awaiting_review: "等待第二人复核",
+  blocked_review: "复核未通过",
+  ready: "三道门已通过，可以开始",
+  operating: "现场操作中",
+  completed_success: "操作成功，已结束",
+  completed_failed: "现场未解决，失败结束",
+};
+
+function canImportOperation() {
+  return ["interface_person", "ai_admin"].includes(state.role);
+}
+
+function canDecideOperationPermission() {
+  return ["interface_person", "facility_lead", "ai_admin"].includes(state.role);
+}
+
+function canOperate() {
+  return ["onsite_operator", "ai_admin"].includes(state.role);
+}
+
+function renderOperationSession() {
+  document.querySelector("#operationSession").innerHTML = `
+    <div><small>当前工作台</small><strong>${escapeHtml(roleNames[state.role])}</strong></div>
+    <div><small>操作账号</small><strong>${escapeHtml(state.actor)}</strong></div>
+    <div><small>复核原则</small><strong>操作人与复核人不能相同</strong></div>
+    <div><small>夜间路径</small><strong>授权复核池 → 备用人 → 负责人</strong></div>`;
+  document.querySelector("#omsImportSection").classList.toggle("is-unavailable", !canImportOperation());
+  document.querySelector("#omsImportSection").open = canImportOperation();
+}
+
+function renderOperationList() {
+  const target = document.querySelector("#operationList");
+  target.innerHTML = state.operations.length ? state.operations.map((item) => `
+    <button class="operation-row ${state.selectedOperation?.id === item.id ? "is-selected" : ""}" data-operation-id="${escapeHtml(item.id)}" type="button">
+      <small>${escapeHtml(item.work_order.order_no)} · ${escapeHtml(item.work_order.site)}</small>
+      <strong>${escapeHtml(item.work_order.target_sn)}</strong>
+      <span>${escapeHtml(item.work_order.rack_position)}</span>
+      <b>${escapeHtml(operationStatusNames[item.status] || item.status)}</b>
+    </button>`).join("") : `<div class="admin-empty">还没有现场操作单。接口人或管理员可先导入一张 OMS 工单快照。</div>`;
+}
+
+function gateItem(name, passed, waitingText) {
+  return `<div data-gate-passed="${passed ? "yes" : "no"}"><span>${passed ? "✓" : "!"}</span><small>${escapeHtml(name)}</small><strong>${passed ? "已通过" : escapeHtml(waitingText)}</strong></div>`;
+}
+
+function operationActions(operation) {
+  const work = operation.work_order;
+  const final = operation.status.startsWith("completed_");
+  const blocks = [];
+  if (canOperate() && !final && operation.status !== "operating") {
+    blocks.push(`<form class="operation-action-form" data-operation-action="identity" data-operation-id="${escapeHtml(operation.id)}">
+      <header><strong>1. 核对现场完整 SN</strong><span>扫描结果必须与工单逐字符一致</span></header>
+      <div class="operation-action-grid">
+        <label>现场完整 SN<input name="observed_sn" required value="${escapeHtml(operation.observed_sn || "")}" placeholder="不允许只输入末位"></label>
+        <label>获取方式<select name="method"><option value="barcode">条码扫描</option><option value="qr">二维码扫描</option><option value="ocr">SN 局部照片 OCR 结果</option><option value="manual">手工完整输入</option></select></label>
+        <button class="secondary-button" data-action="scan-sn" type="button">使用相机扫码</button>
+        <button class="primary-button" type="submit">核对完整 SN</button>
+      </div>
+      <p>OCR 服务尚未配置时，系统只接受你手工填入识别结果，并明确标记为 OCR 回退；不会声称自动识别成功。</p>
+    </form>`);
+  }
+  if (canDecideOperationPermission() && !final && operation.status !== "operating" && operation.identity_status === "confirmed") {
+    blocks.push(`<form class="operation-action-form" data-operation-action="permission" data-operation-id="${escapeHtml(operation.id)}">
+      <header><strong>2. 确认是否允许操作</strong><span>设备找对了，不代表允许断电或更换</span></header>
+      <div class="operation-action-grid">
+        <label>许可结论<select name="decision"><option value="allowed">允许操作</option><option value="needs_confirmation">仍需等待</option><option value="forbidden">禁止操作</option></select></label>
+        <label>确认依据<input name="reason" required placeholder="业务已迁移 / 重装发起 / 禁止关机"></label>
+        <button class="primary-button" type="submit">保存许可结论</button>
+      </div>
+    </form>`);
+  }
+  if (!final && operation.status !== "operating" && operation.identity_status === "confirmed" && operation.permission_status === "allowed") {
+    blocks.push(`<form class="operation-action-form" data-operation-action="review" data-operation-id="${escapeHtml(operation.id)}">
+      <header><strong>3. 第二人复核</strong><span>白天可由现场同岗复核；单人值班可由授权人员远程复核</span></header>
+      <div class="operation-action-grid">
+        <label>复核方式<select name="review_mode"><option value="onsite_peer">现场同岗双人复核</option><option value="remote_authorized">授权远程复核</option></select></label>
+        <label>复核结论<select name="decision"><option value="approved">信息一致，允许开始</option><option value="rejected">信息有疑问，阻止操作</option></select></label>
+        <label>复核说明<input name="note" placeholder="已核对 OMS 快照、完整SN与机架位"></label>
+        <button class="primary-button" type="submit">提交复核</button>
+      </div>
+    </form>`);
+  }
+  if (canOperate() && operation.status === "ready") {
+    blocks.push(`<div class="start-operation"><div><strong>设备身份、操作许可、人工复核均已通过</strong><span>点击后状态变为“操作中”，现场再开始物理操作。</span></div><button class="primary-button" data-action="start-operation" data-operation-id="${escapeHtml(operation.id)}" type="button">确认开始操作</button></div>`);
+  }
+  if (canOperate() && operation.status === "operating") {
+    blocks.push(`<form class="operation-action-form completion-form" data-operation-action="complete" data-operation-id="${escapeHtml(operation.id)}">
+      <header><strong>结束操作并反馈结果</strong><span>点击结束不是直接结单，必须填写结果、原因和详情</span></header>
+      <div class="operation-action-grid">
+        <label>操作结果<select name="result"><option value="success">成功：已恢复并完成验证</option><option value="failed">失败：现场能做的已完成但未解决</option></select></label>
+        <label>结构化原因<select name="reason"><option value="completed_as_ordered">已按工单完成</option><option value="network_recovered">三网已通</option><option value="mainboard_failure">疑似主板故障</option><option value="replacement_no_effect">更换后无改善</option><option value="permission_or_business_blocked">业务或许可阻止</option><option value="other">其他</option></select></label>
+        <label>下线备件 SN<input name="offline_sn" placeholder="如未更换可不填"></label>
+        <label>上线备件 SN<input name="online_sn" placeholder="如未更换可不填"></label>
+        <label class="span-two">详细反馈<textarea name="details" rows="4" required placeholder="做了哪些操作、验证了什么、目前是什么状态"></textarea></label>
+        <label class="span-two">超时原因<input name="timeout_reason" placeholder="未超时可不填"></label>
+        <button class="primary-button" type="submit">确认信息并结束操作</button>
+      </div>
+    </form>`);
+  }
+  return blocks.join("");
+}
+
+function renderOperationDetail(operation) {
+  const work = operation.work_order;
+  const history = operation.history || [];
+  document.querySelector("#operationDetail").innerHTML = `
+    <header class="operation-detail-head"><div><small>${escapeHtml(operation.id)} · 快照 ${escapeHtml(work.id)}</small><h3>${escapeHtml(work.order_no)}</h3><p>${escapeHtml(work.operation_type)} · ${escapeHtml(work.urgency)}</p></div><strong data-operation-status="${escapeHtml(operation.status)}">${escapeHtml(operationStatusNames[operation.status] || operation.status)}</strong></header>
+    <div class="work-order-snapshot">
+      <div><small>工单完整 SN</small><strong>${escapeHtml(work.target_sn)}</strong></div><div><small>机架位</small><strong>${escapeHtml(work.rack_position)}</strong></div><div><small>设备名</small><strong>${escapeHtml(work.device_name || "未提供")}</strong></div><div><small>从重装中发起</small><strong>${escapeHtml(work.from_reinstall)}</strong></div>
+    </div>
+    <div class="operation-gates">
+      ${gateItem("设备身份", operation.gates.identity, operation.identity_status === "mismatch" ? "不一致" : "待核对")}
+      ${gateItem("操作许可", operation.gates.permission, operation.permission_status === "forbidden" ? "禁止" : "待确认")}
+      ${gateItem("人工复核", operation.gates.human_review, "待第二人")}
+    </div>
+    ${operation.result_status ? `<section class="operation-result" data-result="${escapeHtml(operation.result_status)}"><strong>${operation.result_status === "success" ? "操作成功" : "失败接单"}</strong><p>${escapeHtml(operation.result_reason)}：${escapeHtml(operation.result_details)}</p><span>下线 SN：${escapeHtml(operation.offline_sn || "无")} · 上线 SN：${escapeHtml(operation.online_sn || "无")}</span></section>` : ""}
+    <div class="operation-actions-stack">${operationActions(operation)}</div>
+    <details class="operation-history"><summary>查看完整操作日志（${history.length}）</summary>${history.map((item) => `<div><time>${escapeHtml(formatTime(item.created_at))}</time><strong>${escapeHtml(item.action)}</strong><span>${escapeHtml(item.actor)} · ${escapeHtml(item.from_status || "开始")} → ${escapeHtml(item.to_status)}</span><pre>${escapeHtml(jsonText(item.details))}</pre></div>`).join("")}</details>`;
+}
+
+async function loadOperations(preferredId = null) {
+  const payload = await api("/api/operations");
+  state.operations = payload.items || [];
+  renderOperationList();
+  const target = preferredId || state.selectedOperation?.id || state.operations[0]?.id;
+  if (target) await selectOperation(target);
+}
+
+async function selectOperation(operationId) {
+  state.selectedOperation = await api(`/api/operations/${encodeURIComponent(operationId)}`);
+  renderOperationList();
+  renderOperationDetail(state.selectedOperation);
+}
+
+async function openOperations() {
+  renderOperationSession();
+  openDialog(operationDialog);
+  await loadOperations();
+}
+
+async function importWorkOrder(form) {
+  const payload = Object.fromEntries(new FormData(form).entries());
+  const created = await api("/api/operations/import", { method: "POST", body: JSON.stringify(payload) });
+  form.reset();
+  showToast(`OMS 快照 ${created.work_order.order_no} 已保存，等待核对完整 SN`);
+  await loadOperations(created.id);
+}
+
+async function submitOperationAction(form) {
+  const payload = Object.fromEntries(new FormData(form).entries());
+  const action = form.dataset.operationAction;
+  const operationId = form.dataset.operationId;
+  const updated = await api(`/api/operations/${encodeURIComponent(operationId)}/${action}`, { method: "POST", body: JSON.stringify(payload) });
+  const message = { identity: "完整 SN 核对结果已保存", permission: "操作许可已保存", review: "人工复核已保存", complete: "操作结果和详细反馈已保存" }[action] || "操作已保存";
+  showToast(message);
+  await loadOperations(updated.id);
+}
+
+async function startOperation(operationId) {
+  const updated = await api(`/api/operations/${encodeURIComponent(operationId)}/start`, { method: "POST", body: "{}" });
+  showToast("已确认开始操作，状态已变为“现场操作中”");
+  await loadOperations(updated.id);
+}
+
+async function scanOperationSN() {
+  const form = document.querySelector('[data-operation-action="identity"]');
+  if (!form) return;
+  if (typeof cameraDialog.showModal === "function") cameraDialog.showModal();
+  document.querySelector("#scannerStatus").textContent = "正在打开摄像头，只在本机识别条码…";
+  try {
+    const value = await window.IDCAIDeviceScan.scanFullSN();
+    form.querySelector('[name="observed_sn"]').value = value;
+    form.querySelector('[name="method"]').value = "barcode";
+    document.querySelector("#scannerStatus").textContent = `已识别完整 SN：${value}`;
+    closeDialog(cameraDialog);
+    showToast("条码已识别，请核对后提交；画面没有保存");
+  } catch (error) {
+    document.querySelector("#scannerStatus").textContent = error.message;
+    showToast(error.message, true);
+  }
+}
+
+async function closeCamera() {
+  await window.IDCAIDeviceScan?.stopScan();
+  closeDialog(cameraDialog);
+}
+
 document.addEventListener("click", (event) => {
   const incidentButton = event.target.closest("[data-incident-id]");
   if (incidentButton) selectIncident(incidentButton.dataset.incidentId);
@@ -1135,6 +1339,10 @@ document.addEventListener("click", (event) => {
     loadFacilities().catch((error) => showToast(error.message, true));
   }
   if (action === "open-admin") openAdmin();
+  if (action === "open-operations") openOperations().catch((error) => showToast(error.message, true));
+  if (action === "start-operation") startOperation(event.target.closest("[data-action]").dataset.operationId).catch((error) => showToast(error.message, true));
+  if (action === "scan-sn") scanOperationSN();
+  if (action === "close-camera") closeCamera();
   if (action === "load-admin-records") loadAdminRecords().catch((error) => showToast(error.message, true));
   if (action === "load-rag-runs") loadRagRuns().catch((error) => showToast(error.message, true));
   if (action === "load-releases") loadReleases().catch((error) => showToast(error.message, true));
@@ -1186,6 +1394,9 @@ document.addEventListener("click", (event) => {
 
   const ragButton = event.target.closest("[data-rag-run-id]");
   if (ragButton) selectRagRun(ragButton.dataset.ragRunId).catch((error) => showToast(error.message, true));
+
+  const operationButton = event.target.closest("[data-operation-id]");
+  if (operationButton && !operationButton.dataset.action) selectOperation(operationButton.dataset.operationId).catch((error) => showToast(error.message, true));
 });
 
 document.addEventListener("submit", (event) => {
@@ -1203,6 +1414,17 @@ document.addEventListener("submit", (event) => {
   if (event.target.matches("#promptDraftForm")) {
     event.preventDefault();
     createPromptDraft(event.target).catch((error) => showToast(`提示词草稿保存失败：${error.message}`, true));
+    return;
+  }
+  if (event.target.matches("#workOrderImportForm")) {
+    event.preventDefault();
+    importWorkOrder(event.target).catch((error) => showToast(`工单快照保存失败：${error.message}`, true));
+    return;
+  }
+  const operationForm = event.target.closest(".operation-action-form");
+  if (operationForm) {
+    event.preventDefault();
+    submitOperationAction(operationForm).catch((error) => showToast(error.message, true));
   }
 });
 
@@ -1211,7 +1433,17 @@ document.querySelector("#searchInput").addEventListener("input", (event) => {
   state.query = event.target.value;
   renderList();
 });
-document.querySelector("#roleSelect").addEventListener("change", (event) => setRole(event.target.value));
+document.querySelector("#roleSelect").addEventListener("change", (event) => setRole(event.target.value, false));
+document.querySelector("#userIdentity").addEventListener("change", (event) => {
+  state.actor = event.target.value.trim() || defaultActorForRole(state.role);
+  event.target.value = state.actor;
+  localStorage.setItem("idcai-actor", state.actor);
+  showToast(`当前操作账号已设为 ${state.actor}`);
+  if (operationDialog.open) {
+    renderOperationSession();
+    if (state.selectedOperation) renderOperationDetail(state.selectedOperation);
+  }
+});
 document.querySelector("#knowledgeSearch").addEventListener("input", renderKnowledgeList);
 document.querySelector("#recordSearch").addEventListener("keydown", (event) => {
   if (event.key === "Enter") {
@@ -1272,13 +1504,13 @@ document.querySelector("#publishConfirmForm").addEventListener("submit", (event)
   publishRelease(releaseId).catch((error) => showToast(error.message, true));
 });
 
-for (const dialog of [ingestDialog, demoDialog, sourceDialog, facilityDialog, adminDialog, publishConfirmDialog]) {
+for (const dialog of [ingestDialog, demoDialog, sourceDialog, facilityDialog, adminDialog, publishConfirmDialog, operationDialog]) {
   dialog.addEventListener("click", (event) => {
     if (event.target === dialog) closeDialog(dialog);
   });
 }
 
-setRole(state.role);
+setRole(state.role, true);
 loadDemos();
 loadSources(false).catch(() => {});
 loadFacilities().catch(() => {});

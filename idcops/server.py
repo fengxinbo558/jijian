@@ -13,7 +13,14 @@ from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 from urllib.parse import parse_qs, unquote, urlparse
 
-from .auth import is_ai_admin, normalize_role
+from .auth import (
+    can_decide_permission,
+    can_import_work_order,
+    can_operate_onsite,
+    can_review_operation,
+    is_ai_admin,
+    normalize_role,
+)
 from .demo_cases import DEMO_CASES, list_demos
 from .service import IncidentService
 from .store import IncidentStore
@@ -143,6 +150,14 @@ class RequestHandler(BaseHTTPRequestHandler):
                     HTTPStatus.OK,
                     {"items": self.app.service.source_statuses(check_external=check_external)},
                 )
+            elif path == "/api/operations":
+                self._json(HTTPStatus.OK, {"items": self.app.service.operations.list()})
+            elif path.startswith("/api/operations/"):
+                operation_id = unquote(path.removeprefix("/api/operations/"))
+                item = self.app.service.operations.get(operation_id)
+                if item is None:
+                    raise APIError(HTTPStatus.NOT_FOUND, "现场操作单不存在")
+                self._json(HTTPStatus.OK, item)
             elif path == "/api/incidents":
                 incidents = self.app.service.list_incidents()
                 counts = {"new": 0, "processing": 0, "resolved": 0}
@@ -215,6 +230,47 @@ class RequestHandler(BaseHTTPRequestHandler):
                 self._json(
                     HTTPStatus.OK,
                     self.app.service.releases.rollback(parts[3], self._actor()),
+                )
+            elif path == "/api/operations/import":
+                self._require_permission(can_import_work_order(self._role()), "当前角色不能导入 OMS 工单")
+                self._json(
+                    HTTPStatus.CREATED,
+                    self.app.service.operations.import_work_order(payload, self._actor()),
+                )
+            elif len(parts) == 4 and parts[:2] == ["api", "operations"] and parts[3] == "identity":
+                self._require_permission(can_operate_onsite(self._role()), "当前角色不能执行现场身份核对")
+                self._json(
+                    HTTPStatus.OK,
+                    self.app.service.operations.verify_identity(parts[2], payload, self._actor()),
+                )
+            elif len(parts) == 4 and parts[:2] == ["api", "operations"] and parts[3] == "permission":
+                self._require_permission(can_decide_permission(self._role()), "当前角色不能确认操作许可")
+                self._json(
+                    HTTPStatus.OK,
+                    self.app.service.operations.set_permission(
+                        parts[2],
+                        str(payload.get("decision") or ""),
+                        self._actor(),
+                        str(payload.get("reason") or ""),
+                    ),
+                )
+            elif len(parts) == 4 and parts[:2] == ["api", "operations"] and parts[3] == "review":
+                self._require_permission(can_review_operation(self._role()), "当前角色不能复核现场操作")
+                self._json(
+                    HTTPStatus.OK,
+                    self.app.service.operations.review(parts[2], payload, self._actor()),
+                )
+            elif len(parts) == 4 and parts[:2] == ["api", "operations"] and parts[3] == "start":
+                self._require_permission(can_operate_onsite(self._role()), "当前角色不能开始现场操作")
+                self._json(
+                    HTTPStatus.OK,
+                    self.app.service.operations.start(parts[2], self._actor()),
+                )
+            elif len(parts) == 4 and parts[:2] == ["api", "operations"] and parts[3] == "complete":
+                self._require_permission(can_operate_onsite(self._role()), "当前角色不能结束现场操作")
+                self._json(
+                    HTTPStatus.OK,
+                    self.app.service.operations.complete(parts[2], payload, self._actor()),
                 )
             elif path == "/api/ingest/alert":
                 incident = self.app.service.ingest("monitor", payload)
@@ -343,6 +399,11 @@ class RequestHandler(BaseHTTPRequestHandler):
     def _require_admin(self) -> None:
         if not is_ai_admin(self._role()):
             raise APIError(HTTPStatus.FORBIDDEN, "当前角色没有 AI 资产管理权限")
+
+    @staticmethod
+    def _require_permission(allowed: bool, message: str) -> None:
+        if not allowed:
+            raise APIError(HTTPStatus.FORBIDDEN, message)
 
 
 def create_server(

@@ -284,6 +284,98 @@ class IncidentStore:
                     retrieval_json TEXT NOT NULL,
                     FOREIGN KEY(run_id) REFERENCES rag_runs(id)
                 );
+
+                CREATE TABLE IF NOT EXISTS asset_devices (
+                    sn TEXT PRIMARY KEY,
+                    site TEXT NOT NULL,
+                    rack_position TEXT NOT NULL,
+                    device_name TEXT NOT NULL,
+                    device_type TEXT NOT NULL,
+                    source TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS work_order_snapshots (
+                    id TEXT PRIMARY KEY,
+                    order_no TEXT NOT NULL,
+                    incident_id TEXT NOT NULL,
+                    source TEXT NOT NULL,
+                    site TEXT NOT NULL,
+                    target_sn TEXT NOT NULL,
+                    rack_position TEXT NOT NULL,
+                    device_name TEXT NOT NULL,
+                    operation_type TEXT NOT NULL,
+                    urgency TEXT NOT NULL,
+                    from_reinstall TEXT NOT NULL,
+                    power_policy TEXT NOT NULL,
+                    payload_json TEXT NOT NULL,
+                    imported_by TEXT NOT NULL,
+                    created_at TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_work_order_snapshots_order
+                    ON work_order_snapshots(order_no, created_at DESC);
+
+                CREATE TABLE IF NOT EXISTS operation_cases (
+                    id TEXT PRIMARY KEY,
+                    work_order_snapshot_id TEXT NOT NULL,
+                    incident_id TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    operator TEXT NOT NULL,
+                    identity_status TEXT NOT NULL,
+                    permission_status TEXT NOT NULL,
+                    observed_sn TEXT NOT NULL,
+                    scan_method TEXT NOT NULL,
+                    review_status TEXT NOT NULL,
+                    review_mode TEXT NOT NULL,
+                    reviewer TEXT NOT NULL,
+                    result_status TEXT NOT NULL,
+                    result_reason TEXT NOT NULL,
+                    result_details TEXT NOT NULL,
+                    online_sn TEXT NOT NULL,
+                    offline_sn TEXT NOT NULL,
+                    timeout_reason TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    FOREIGN KEY(work_order_snapshot_id) REFERENCES work_order_snapshots(id)
+                );
+                CREATE INDEX IF NOT EXISTS idx_operation_cases_status
+                    ON operation_cases(status, updated_at DESC);
+
+                CREATE TABLE IF NOT EXISTS operation_permissions (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    operation_id TEXT NOT NULL,
+                    decision TEXT NOT NULL,
+                    decided_by TEXT NOT NULL,
+                    reason TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    FOREIGN KEY(operation_id) REFERENCES operation_cases(id)
+                );
+
+                CREATE TABLE IF NOT EXISTS operation_reviews (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    operation_id TEXT NOT NULL,
+                    reviewer TEXT NOT NULL,
+                    decision TEXT NOT NULL,
+                    review_mode TEXT NOT NULL,
+                    expected_sn TEXT NOT NULL,
+                    observed_sn TEXT NOT NULL,
+                    rack_position TEXT NOT NULL,
+                    note TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    FOREIGN KEY(operation_id) REFERENCES operation_cases(id)
+                );
+
+                CREATE TABLE IF NOT EXISTS operation_history (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    operation_id TEXT NOT NULL,
+                    action TEXT NOT NULL,
+                    actor TEXT NOT NULL,
+                    from_status TEXT NOT NULL,
+                    to_status TEXT NOT NULL,
+                    details_json TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    FOREIGN KEY(operation_id) REFERENCES operation_cases(id)
+                );
                 """
             )
             columns = {
@@ -298,6 +390,13 @@ class IncidentStore:
                 """
                 INSERT OR IGNORE INTO schema_migrations (version, name, applied_at)
                 VALUES (1, 'data_ai_assets_foundation', ?)
+                """,
+                (utc_now(),),
+            )
+            connection.execute(
+                """
+                INSERT OR IGNORE INTO schema_migrations (version, name, applied_at)
+                VALUES (2, 'onsite_work_order_operations', ?)
                 """,
                 (utc_now(),),
             )

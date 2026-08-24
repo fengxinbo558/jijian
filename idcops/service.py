@@ -15,6 +15,7 @@ from .investigation import apply_model_enrichment, build_investigation, merge_in
 from .integrations import IntegrationHub
 from .knowledge import KnowledgeBase
 from .models import NormalizedInput, RuleAnalysis, utc_now
+from .operations import OperationService
 from .rules import analyze_rules
 from .releases import ReleaseManager
 from .rag_trace import RagTraceRecorder
@@ -136,6 +137,7 @@ class IncidentService:
         self.admin = AdminService(store, self.assets)
         self.releases = ReleaseManager(store, self.assets)
         self.rag_traces = RagTraceRecorder(store, self.assets)
+        self.operations = OperationService(store)
         self.ai = ai or AIEnricher(self.assets)
         self.knowledge = knowledge or KnowledgeBase(registry=self.assets)
         self.integrations = integrations or IntegrationHub()
