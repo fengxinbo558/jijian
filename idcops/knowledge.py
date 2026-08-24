@@ -5,7 +5,12 @@ from __future__ import annotations
 import json
 import re
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Set
+from typing import TYPE_CHECKING, Any, Dict, Iterable, List, Mapping, Optional, Sequence, Set
+
+from .embeddings import LocalFeatureEmbeddingProvider
+
+if TYPE_CHECKING:
+    from .assets import AssetRegistry
 
 
 REQUIRED_FIELDS = {
@@ -59,21 +64,31 @@ def _term_matches(term: str, text: str) -> bool:
 class KnowledgeBase:
     """Load, validate, and retrieve a small auditable knowledge pack."""
 
-    def __init__(self, path: Optional[str] = None) -> None:
+    def __init__(
+        self,
+        path: Optional[str] = None,
+        registry: Optional["AssetRegistry"] = None,
+        embedding_provider: Optional[LocalFeatureEmbeddingProvider] = None,
+    ) -> None:
         root = Path(__file__).resolve().parent.parent
         self.path = Path(path).expanduser().resolve() if path else root / "knowledge" / "diagnostic_cards.json"
+        self.registry = registry
+        self.embedding_provider = embedding_provider or LocalFeatureEmbeddingProvider()
         self.schema_version = ""
         self.sources: Dict[str, Dict[str, Any]] = {}
         self.cards: List[Dict[str, Any]] = []
         self._load()
 
     def _load(self) -> None:
-        try:
-            payload = json.loads(self.path.read_text(encoding="utf-8"))
-        except FileNotFoundError as exc:
-            raise KnowledgeValidationError(f"knowledge pack not found: {self.path}") from exc
-        except json.JSONDecodeError as exc:
-            raise KnowledgeValidationError(f"knowledge pack is invalid JSON: {exc}") from exc
+        if self.registry is not None:
+            payload = self.registry.published_knowledge_payload()
+        else:
+            try:
+                payload = json.loads(self.path.read_text(encoding="utf-8"))
+            except FileNotFoundError as exc:
+                raise KnowledgeValidationError(f"knowledge pack not found: {self.path}") from exc
+            except json.JSONDecodeError as exc:
+                raise KnowledgeValidationError(f"knowledge pack is invalid JSON: {exc}") from exc
         if not isinstance(payload, Mapping):
             raise KnowledgeValidationError("knowledge pack root must be an object")
         self.schema_version = str(payload.get("schema_version", "")).strip()
@@ -164,10 +179,15 @@ class KnowledgeBase:
     ) -> List[Dict[str, Any]]:
         """Return matched cards with transparent, deterministic reasons."""
 
+        if self.registry is not None:
+            self._load()
+
         rule_set = self._terms(rule_names)
         fact_set = self._terms(fact_types)
         lowered = text.lower()
         device = device_type.strip().lower()
+        query_text = " ".join([text, device_type, *rule_names, *fact_types])
+        query_vector = self.embedding_provider.embed([query_text])[0]
         found: List[Dict[str, Any]] = []
         for card in self.cards:
             match = card.get("match", {})
@@ -178,7 +198,26 @@ class KnowledgeBase:
             ]
             applies = self._terms(card.get("applies_to", []))
             device_match = bool(device and device in applies)
-            if not matched_facts and not matched_terms:
+            card_text = " ".join(
+                str(value)
+                for field in (
+                    "title",
+                    "applies_to",
+                    "symptoms",
+                    "supporting_signals",
+                    "competing_causes",
+                    "required_context",
+                    "verification_steps",
+                    "branch_conditions",
+                )
+                for value in (
+                    card.get(field, []) if isinstance(card.get(field), list) else [card.get(field, "")]
+                )
+            )
+            card_vector = self.embedding_provider.embed([card_text])[0]
+            vector_similarity = self.embedding_provider.similarity(query_vector, card_vector)
+            vector_only = not matched_facts and not matched_terms
+            if vector_only and vector_similarity < 0.22:
                 continue
             score = len(matched_rules) * 2 + len(matched_facts) * 5 + len(matched_terms) * 2
             reasons: List[str] = []
@@ -191,12 +230,24 @@ class KnowledgeBase:
             if device_match:
                 reasons.append("设备类型适用")
                 score += 1
+            if vector_similarity >= 0.12:
+                reasons.append(f"本地特征向量相似：{vector_similarity:.2f}")
+                score += max(1, int(vector_similarity * 10))
             found.append(
                 {
                     "card": dict(card),
                     "score": score,
                     "reasons": reasons,
                     "source_details": [self.sources[item] for item in card["sources"]],
+                    "retrieval": {
+                        "rules": matched_rules,
+                        "facts": matched_facts,
+                        "terms": matched_terms,
+                        "device_match": device_match,
+                        "vector_similarity": round(vector_similarity, 4),
+                        "vector_provider": self.embedding_provider.provider_key,
+                        "vector_capability": self.embedding_provider.capability,
+                    },
                 }
             )
         found.sort(key=lambda item: (-int(item["score"]), str(item["card"]["id"])))

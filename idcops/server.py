@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 from urllib.parse import parse_qs, unquote, urlparse
 
+from .auth import is_ai_admin, normalize_role
 from .demo_cases import DEMO_CASES, list_demos
 from .service import IncidentService
 from .store import IncidentStore
@@ -58,14 +59,67 @@ class RequestHandler(BaseHTTPRequestHandler):
         self.send_response(HTTPStatus.NO_CONTENT)
         self._common_headers()
         self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type")
+        self.send_header(
+            "Access-Control-Allow-Headers", "Content-Type, X-IDCAI-Role, X-IDCAI-User"
+        )
         self.end_headers()
 
     def do_GET(self) -> None:  # noqa: N802
         try:
             parsed_url = urlparse(self.path)
             path = parsed_url.path
-            if path == "/api/health":
+            if path.startswith("/api/admin/"):
+                self._require_admin()
+            if path == "/api/admin/summary":
+                self._json(HTTPStatus.OK, self.app.service.admin.summary())
+            elif path == "/api/admin/records":
+                query = parse_qs(parsed_url.query)
+                record_type = query.get("type", ["incidents"])[0]
+                search = query.get("q", [""])[0]
+                limit = int(query.get("limit", ["100"])[0])
+                self._json(
+                    HTTPStatus.OK,
+                    self.app.service.admin.list_records(record_type, search, limit),
+                )
+            elif path == "/api/admin/knowledge":
+                self._json(
+                    HTTPStatus.OK,
+                    {"items": self.app.service.assets.list_knowledge()},
+                )
+            elif path.startswith("/api/admin/knowledge/"):
+                card_id = unquote(path.removeprefix("/api/admin/knowledge/"))
+                item = self.app.service.assets.get_knowledge(card_id)
+                if item is None:
+                    raise APIError(HTTPStatus.NOT_FOUND, "知识卡不存在")
+                self._json(HTTPStatus.OK, item)
+            elif path == "/api/admin/prompts":
+                self._json(
+                    HTTPStatus.OK,
+                    {"items": self.app.service.assets.list_prompts()},
+                )
+            elif path.startswith("/api/admin/prompts/"):
+                prompt_key = unquote(path.removeprefix("/api/admin/prompts/"))
+                item = self.app.service.assets.get_prompt(prompt_key)
+                if item is None:
+                    raise APIError(HTTPStatus.NOT_FOUND, "提示词不存在")
+                self._json(HTTPStatus.OK, item)
+            elif path == "/api/admin/releases":
+                self._json(
+                    HTTPStatus.OK,
+                    {"items": self.app.service.releases.list()},
+                )
+            elif path == "/api/admin/rag-runs":
+                self._json(
+                    HTTPStatus.OK,
+                    {"items": self.app.service.rag_traces.list()},
+                )
+            elif path.startswith("/api/admin/rag-runs/"):
+                run_id = unquote(path.removeprefix("/api/admin/rag-runs/"))
+                item = self.app.service.rag_traces.get(run_id)
+                if item is None:
+                    raise APIError(HTTPStatus.NOT_FOUND, "RAG运行记录不存在")
+                self._json(HTTPStatus.OK, item)
+            elif path == "/api/health":
                 source_statuses = self.app.service.source_statuses(check_external=False)
                 self._json(
                     HTTPStatus.OK,
@@ -122,7 +176,47 @@ class RequestHandler(BaseHTTPRequestHandler):
         try:
             path = urlparse(self.path).path
             payload = self._read_json()
-            if path == "/api/ingest/alert":
+            if path.startswith("/api/admin/"):
+                self._require_admin()
+            parts = [unquote(item) for item in path.strip("/").split("/")]
+            if path == "/api/admin/annotations":
+                result = self.app.service.admin.add_annotation(payload, self._actor())
+                self._json(HTTPStatus.CREATED, result)
+            elif len(parts) == 5 and parts[:3] == ["api", "admin", "prompts"] and parts[4] == "versions":
+                result = self.app.service.assets.create_prompt_version(
+                    parts[3], payload, self._actor()
+                )
+                self._json(HTTPStatus.CREATED, result)
+            elif len(parts) == 5 and parts[:3] == ["api", "admin", "prompts"] and parts[4] == "preview":
+                result = self.app.service.assets.preview_prompt(
+                    parts[3],
+                    str(payload.get("version") or ""),
+                    payload.get("variables", {}) if isinstance(payload.get("variables"), dict) else {},
+                )
+                self._json(HTTPStatus.OK, result)
+            elif len(parts) == 5 and parts[:3] == ["api", "admin", "knowledge"] and parts[4] == "versions":
+                result = self.app.service.assets.create_knowledge_version(
+                    parts[3], payload, self._actor()
+                )
+                self._json(HTTPStatus.CREATED, result)
+            elif path == "/api/admin/releases/test":
+                result = self.app.service.releases.test_asset(payload, self._actor())
+                self._json(HTTPStatus.CREATED, result)
+            elif len(parts) == 5 and parts[:3] == ["api", "admin", "releases"] and parts[4] == "prepare":
+                self._json(HTTPStatus.OK, self.app.service.releases.prepare(parts[3]))
+            elif len(parts) == 5 and parts[:3] == ["api", "admin", "releases"] and parts[4] == "publish":
+                self._json(
+                    HTTPStatus.OK,
+                    self.app.service.releases.publish(
+                        parts[3], bool(payload.get("confirmed_online")), self._actor()
+                    ),
+                )
+            elif len(parts) == 5 and parts[:3] == ["api", "admin", "releases"] and parts[4] == "rollback":
+                self._json(
+                    HTTPStatus.OK,
+                    self.app.service.releases.rollback(parts[3], self._actor()),
+                )
+            elif path == "/api/ingest/alert":
                 incident = self.app.service.ingest("monitor", payload)
                 self._json(HTTPStatus.CREATED, incident)
             elif path == "/api/ingest/signoz-alert":
@@ -237,6 +331,18 @@ class RequestHandler(BaseHTTPRequestHandler):
         self.send_header("Cache-Control", "no-store")
         self.send_header("X-Content-Type-Options", "nosniff")
         self.send_header("X-Frame-Options", "DENY")
+
+    def _role(self) -> str:
+        return normalize_role(
+            self.headers.get("X-IDCAI-Role", os.getenv("IDCAI_DEFAULT_ROLE", "ai_admin"))
+        )
+
+    def _actor(self) -> str:
+        return str(self.headers.get("X-IDCAI-User", "local-admin")).strip() or "local-admin"
+
+    def _require_admin(self) -> None:
+        if not is_ai_admin(self._role()):
+            raise APIError(HTTPStatus.FORBIDDEN, "当前角色没有 AI 资产管理权限")
 
 
 def create_server(

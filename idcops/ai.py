@@ -10,12 +10,14 @@ import urllib.request
 from pathlib import Path
 from typing import Any, Dict, Mapping, Optional
 
+from .assets import AssetRegistry
 from .models import NormalizedInput, RuleAnalysis
 from .security import redact_text
 
 
 class AIEnricher:
-    def __init__(self) -> None:
+    def __init__(self, registry: Optional[AssetRegistry] = None) -> None:
+        self.registry = registry
         self.url = os.getenv("IDCAI_MODEL_URL", "").strip()
         self.model = os.getenv("IDCAI_MODEL", "").strip()
         self.api_key = os.getenv("IDCAI_API_KEY", "").strip()
@@ -82,9 +84,25 @@ class AIEnricher:
             ],
             "baseline_hypotheses": investigation.get("hypotheses", [])[:8],
         }
+        prompt_asset = (
+            self.registry.get_published_prompt_version("hypothesis")
+            if self.registry is not None
+            else None
+        )
+        contract_version = (
+            prompt_asset.get("version") if prompt_asset else self.hypothesis_contract.get("version")
+        )
+        instructions = (
+            prompt_asset.get("user_template")
+            if prompt_asset
+            else self.hypothesis_contract.get("instructions")
+        )
+        system_content = (
+            prompt_asset.get("system_content") if prompt_asset else "只输出一个JSON对象。"
+        )
         prompt = (
-            f"提示词契约：{self.hypothesis_contract.get('version')}。"
-            f"{self.hypothesis_contract.get('instructions')}"
+            f"提示词契约：{contract_version}。"
+            f"{instructions}"
             "只输出JSON，字段仅允许 impact_summary、candidate_causes、missing_information。"
             "candidate_causes每项必须含title、evidence_ids、counter_evidence、status；"
             "status只能是candidate或high_likelihood；evidence_ids只能引用现有ID。\n\n"
@@ -93,7 +111,7 @@ class AIEnricher:
         request_body = {
             "model": self.model,
             "messages": [
-                {"role": "system", "content": "只输出一个JSON对象。"},
+                {"role": "system", "content": system_content},
                 {"role": "user", "content": prompt},
             ],
             "temperature": 0.1,
@@ -112,7 +130,17 @@ class AIEnricher:
                 payload = json.loads(response.read().decode("utf-8"))
             content = payload["choices"][0]["message"]["content"]
             result = self._parse_json(content)
-            return self._validate(result, evidence_ids)
+            validated = self._validate(result, evidence_ids)
+            redacted_response, _response_counts = redact_text(str(content))
+            validated["_model_trace"] = {
+                "provider": self.url,
+                "model": self.model,
+                "prompt_version": contract_version,
+                "messages": request_body["messages"],
+                "raw_response": redacted_response[:12000],
+                "validation": "accepted",
+            }
+            return validated
         except (
             KeyError,
             IndexError,

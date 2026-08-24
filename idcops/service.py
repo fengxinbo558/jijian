@@ -9,12 +9,15 @@ from typing import Any, Dict, Iterable, List, Mapping, Optional
 
 from .ai import AIEnricher
 from .assets import AssetRegistry
+from .admin import AdminService
 from .facility import assess_facility_event, strongest_assessment
 from .investigation import apply_model_enrichment, build_investigation, merge_investigations
 from .integrations import IntegrationHub
 from .knowledge import KnowledgeBase
 from .models import NormalizedInput, RuleAnalysis, utc_now
 from .rules import analyze_rules
+from .releases import ReleaseManager
+from .rag_trace import RagTraceRecorder
 from .store import IncidentStore
 
 
@@ -130,8 +133,11 @@ class IncidentService:
         self.store = store
         self.assets = AssetRegistry(store)
         self.assets.ensure_seeded()
-        self.ai = ai or AIEnricher()
-        self.knowledge = knowledge or KnowledgeBase()
+        self.admin = AdminService(store, self.assets)
+        self.releases = ReleaseManager(store, self.assets)
+        self.rag_traces = RagTraceRecorder(store, self.assets)
+        self.ai = ai or AIEnricher(self.assets)
+        self.knowledge = knowledge or KnowledgeBase(registry=self.assets)
         self.integrations = integrations or IntegrationHub()
 
     def ingest(self, source: str, payload: Mapping[str, Any]) -> Dict[str, Any]:
@@ -162,11 +168,15 @@ class IncidentService:
         if existing:
             investigation = merge_investigations(existing.get("investigation", {}), investigation)
             update = self._merge(existing, event, analysis, analysis_dict, investigation)
-            return self.store.merge_incident(existing["id"], update, event)
+            saved = self.store.merge_incident(existing["id"], update, event)
+            saved["latest_rag_run_id"] = self.rag_traces.record(saved["id"], investigation)
+            return saved
         incident = self._new_incident(
             event, analysis, analysis_dict, correlation_key, investigation
         )
-        return self.store.create_incident(incident, event)
+        saved = self.store.create_incident(incident, event)
+        saved["latest_rag_run_id"] = self.rag_traces.record(saved["id"], investigation)
+        return saved
 
     @staticmethod
     def _combine_analysis(
@@ -560,7 +570,7 @@ class IncidentService:
         investigation["capability_notice"] = "；".join(
             str(item.get("message", "")) for item in observations if item.get("message")
         )
-        return self.store.update_investigation(
+        saved = self.store.update_investigation(
             incident_id,
             investigation,
             {
@@ -568,3 +578,6 @@ class IncidentService:
                 "states": [item.get("state") for item in observations],
             },
         )
+        if saved is not None:
+            saved["latest_rag_run_id"] = self.rag_traces.record(incident_id, investigation)
+        return saved

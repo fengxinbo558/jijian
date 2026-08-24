@@ -283,7 +283,9 @@ def _knowledge_view(matches: Sequence[Mapping[str, Any]]) -> List[Dict[str, Any]
                 "version": card["version"],
                 "title": card["title"],
                 "domain": card["domain"],
+                "score": item.get("score", 0),
                 "retrieval_reasons": list(item.get("reasons", [])),
+                "retrieval": dict(item.get("retrieval", {})),
                 "prohibited_inferences": list(card.get("prohibited_inferences", [])),
                 "stop_conditions": list(card.get("stop_conditions", [])),
                 "sources": list(item.get("source_details", [])),
@@ -566,8 +568,15 @@ def build_investigation(
         "extracted_facts": facts,
         "rule_matches": rule_matches,
         "knowledge_retrieval": {
-            "mode": "deterministic",
+            "mode": "hybrid",
             "coverage": "matched" if knowledge_view else "insufficient",
+            "query": {
+                "rule_names": list(analysis.matched_rules),
+                "fact_types": [str(item["type"]) for item in facts],
+                "device_type": event.device.device_type,
+                "text_excerpt": raw_text[:2000],
+            },
+            "capabilities": ["rules", "facts", "terms", "local_feature_vector"],
             "cards": knowledge_view,
         },
         "correlation": correlation,
@@ -616,8 +625,14 @@ def merge_investigations(existing: Mapping[str, Any], incoming: Mapping[str, Any
     incoming_cards = incoming.get("knowledge_retrieval", {}).get("cards", [])
     cards = _unique(list(existing_cards) + list(incoming_cards), "id")
     result["knowledge_retrieval"] = {
-        "mode": "deterministic",
+        "mode": "hybrid",
         "coverage": "matched" if cards else "insufficient",
+        "query": dict(incoming.get("knowledge_retrieval", {}).get("query", {})),
+        "capabilities": list(
+            incoming.get("knowledge_retrieval", {}).get(
+                "capabilities", ["rules", "facts", "terms", "local_feature_vector"]
+            )
+        ),
         "cards": cards,
     }
     provenance_keyed: Dict[str, Dict[str, Any]] = {}
@@ -693,6 +708,8 @@ def apply_model_enrichment(
         "accepted_hypothesis_count": len(result["hypotheses"]) - len(investigation.get("hypotheses", [])),
         "limitations": ["模型未执行真实查询", "模型不能覆盖身份、许可和确定性事实"],
     }
+    if isinstance(enriched.get("_model_trace"), Mapping):
+        result["model_trace"] = dict(enriched["_model_trace"])
     result["conclusion"] = dict(result.get("conclusion", {}))
     accepted_model_hypotheses = [
         item for item in result["hypotheses"] if item.get("generated_by") == "model_enhanced"

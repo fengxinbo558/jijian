@@ -1,0 +1,15 @@
+"""Small local-role authorization boundary for the private MVP."""
+
+from __future__ import annotations
+
+
+VALID_ROLES = {"onsite_operator", "facility_lead", "interface_person", "ai_admin"}
+
+
+def normalize_role(value: str) -> str:
+    role = str(value or "").strip()
+    return role if role in VALID_ROLES else "onsite_operator"
+
+
+def is_ai_admin(role: str) -> bool:
+    return normalize_role(role) == "ai_admin"
