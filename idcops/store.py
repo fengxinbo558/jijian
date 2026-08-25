@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, Dict, List, Mapping, Optional
+from typing import Any, Dict, Iterator, List, Mapping, Optional
 
 from .investigation import legacy_investigation
 from .models import NormalizedInput, utc_now
@@ -42,11 +43,19 @@ class IncidentStore:
         Path(self.path).parent.mkdir(parents=True, exist_ok=True)
         self.initialize()
 
-    def connect(self) -> sqlite3.Connection:
+    @contextmanager
+    def connect(self) -> Iterator[sqlite3.Connection]:
         connection = sqlite3.connect(self.path, timeout=10)
         connection.row_factory = sqlite3.Row
         connection.execute("PRAGMA foreign_keys = ON")
-        return connection
+        try:
+            yield connection
+            connection.commit()
+        except Exception:
+            connection.rollback()
+            raise
+        finally:
+            connection.close()
 
     def initialize(self) -> None:
         with self.connect() as connection:
@@ -509,6 +518,196 @@ class IncidentStore:
                     created_at TEXT NOT NULL,
                     completed_at TEXT NOT NULL
                 );
+
+                CREATE TABLE IF NOT EXISTS managed_alerts (
+                    id TEXT PRIMARY KEY,
+                    fingerprint TEXT NOT NULL,
+                    source_system TEXT NOT NULL,
+                    source_event_id TEXT NOT NULL,
+                    signal_type TEXT NOT NULL,
+                    site TEXT NOT NULL,
+                    entity_key TEXT NOT NULL,
+                    entity_json TEXT NOT NULL,
+                    severity TEXT NOT NULL,
+                    summary TEXT NOT NULL,
+                    lifecycle_status TEXT NOT NULL,
+                    incident_id TEXT NOT NULL,
+                    first_seen_at TEXT NOT NULL,
+                    last_seen_at TEXT NOT NULL,
+                    recovered_at TEXT NOT NULL,
+                    occurrence_count INTEGER NOT NULL,
+                    suppression_reason TEXT NOT NULL,
+                    parent_alert_id TEXT NOT NULL,
+                    requires_service_validation INTEGER NOT NULL,
+                    data_quality_json TEXT NOT NULL,
+                    payload_json TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
+                CREATE UNIQUE INDEX IF NOT EXISTS idx_managed_alerts_active_fingerprint
+                    ON managed_alerts(fingerprint)
+                    WHERE lifecycle_status IN ('firing', 'acknowledged', 'suppressed', 'silenced');
+                CREATE INDEX IF NOT EXISTS idx_managed_alerts_status_time
+                    ON managed_alerts(lifecycle_status, last_seen_at DESC);
+                CREATE INDEX IF NOT EXISTS idx_managed_alerts_incident
+                    ON managed_alerts(incident_id, last_seen_at DESC);
+
+                CREATE TABLE IF NOT EXISTS maintenance_windows (
+                    id TEXT PRIMARY KEY,
+                    site TEXT NOT NULL,
+                    entity_key TEXT NOT NULL,
+                    source_system TEXT NOT NULL,
+                    starts_at TEXT NOT NULL,
+                    ends_at TEXT NOT NULL,
+                    reason TEXT NOT NULL,
+                    enabled INTEGER NOT NULL,
+                    created_by TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_maintenance_active
+                    ON maintenance_windows(site, starts_at, ends_at);
+
+                CREATE TABLE IF NOT EXISTS source_health (
+                    source_system TEXT PRIMARY KEY,
+                    connection_status TEXT NOT NULL,
+                    last_received_at TEXT NOT NULL,
+                    received_count INTEGER NOT NULL,
+                    rejected_count INTEGER NOT NULL,
+                    queue_depth INTEGER NOT NULL,
+                    dropped_count INTEGER NOT NULL,
+                    retry_count INTEGER NOT NULL,
+                    expected_entities INTEGER NOT NULL,
+                    reporting_entities INTEGER NOT NULL,
+                    coverage_percent REAL NOT NULL,
+                    details_json TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS identity_assertions (
+                    id TEXT PRIMARY KEY,
+                    entity_key TEXT NOT NULL,
+                    source_system TEXT NOT NULL,
+                    field_name TEXT NOT NULL,
+                    field_value TEXT NOT NULL,
+                    authority_rank INTEGER NOT NULL,
+                    observed_at TEXT NOT NULL,
+                    expires_at TEXT NOT NULL,
+                    created_by TEXT NOT NULL,
+                    created_at TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_identity_assertions_entity
+                    ON identity_assertions(entity_key, field_name, authority_rank, observed_at DESC);
+
+                CREATE TABLE IF NOT EXISTS identity_conflicts (
+                    id TEXT PRIMARY KEY,
+                    entity_key TEXT NOT NULL,
+                    field_name TEXT NOT NULL,
+                    authoritative_source TEXT NOT NULL,
+                    authoritative_value TEXT NOT NULL,
+                    conflicting_source TEXT NOT NULL,
+                    conflicting_value TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    operation_blocked INTEGER NOT NULL,
+                    created_at TEXT NOT NULL,
+                    resolved_at TEXT NOT NULL,
+                    resolved_by TEXT NOT NULL,
+                    resolution TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_identity_conflicts_status
+                    ON identity_conflicts(status, created_at DESC);
+
+                CREATE TABLE IF NOT EXISTS change_events (
+                    id TEXT PRIMARY KEY,
+                    site TEXT NOT NULL,
+                    entity_key TEXT NOT NULL,
+                    change_type TEXT NOT NULL,
+                    summary TEXT NOT NULL,
+                    reference_id TEXT NOT NULL,
+                    changed_by TEXT NOT NULL,
+                    changed_at TEXT NOT NULL,
+                    before_json TEXT NOT NULL,
+                    after_json TEXT NOT NULL,
+                    source_system TEXT NOT NULL,
+                    causality TEXT NOT NULL,
+                    created_at TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_change_events_entity_time
+                    ON change_events(site, entity_key, changed_at DESC);
+
+                CREATE TABLE IF NOT EXISTS duty_rosters (
+                    id TEXT PRIMARY KEY,
+                    site TEXT NOT NULL,
+                    team TEXT NOT NULL,
+                    person TEXT NOT NULL,
+                    shift_start TEXT NOT NULL,
+                    shift_end TEXT NOT NULL,
+                    escalation_person TEXT NOT NULL,
+                    created_by TEXT NOT NULL,
+                    created_at TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_duty_rosters_shift
+                    ON duty_rosters(site, team, shift_start, shift_end);
+
+                CREATE TABLE IF NOT EXISTS incident_assignments (
+                    id TEXT PRIMARY KEY,
+                    incident_id TEXT NOT NULL,
+                    assignee TEXT NOT NULL,
+                    team TEXT NOT NULL,
+                    priority TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    due_at TEXT NOT NULL,
+                    acknowledged_at TEXT NOT NULL,
+                    deferred_reason TEXT NOT NULL,
+                    escalated_to TEXT NOT NULL,
+                    assigned_by TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_incident_assignments_active
+                    ON incident_assignments(status, due_at);
+
+                CREATE TABLE IF NOT EXISTS correlation_feedback (
+                    id TEXT PRIMARY KEY,
+                    action TEXT NOT NULL,
+                    alert_id TEXT NOT NULL,
+                    incident_id TEXT NOT NULL,
+                    target_incident_id TEXT NOT NULL,
+                    reason TEXT NOT NULL,
+                    created_by TEXT NOT NULL,
+                    created_at TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_correlation_feedback_incident
+                    ON correlation_feedback(incident_id, created_at DESC);
+
+                CREATE TABLE IF NOT EXISTS investigation_metrics (
+                    id TEXT PRIMARY KEY,
+                    incident_id TEXT NOT NULL,
+                    metric_name TEXT NOT NULL,
+                    metric_value REAL NOT NULL,
+                    dimensions_json TEXT NOT NULL,
+                    recorded_at TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_investigation_metrics_name
+                    ON investigation_metrics(metric_name, recorded_at DESC);
+
+                CREATE TABLE IF NOT EXISTS public_dataset_imports (
+                    id TEXT PRIMARY KEY,
+                    dataset_id TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    source_uri TEXT NOT NULL,
+                    local_path TEXT NOT NULL,
+                    checksum TEXT NOT NULL,
+                    record_count INTEGER NOT NULL,
+                    alert_count INTEGER NOT NULL,
+                    error_count INTEGER NOT NULL,
+                    report_json TEXT NOT NULL,
+                    requested_by TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    completed_at TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_public_dataset_imports_dataset
+                    ON public_dataset_imports(dataset_id, created_at DESC);
                 """
             )
             columns = {
@@ -523,6 +722,13 @@ class IncidentStore:
                 """
                 INSERT OR IGNORE INTO schema_migrations (version, name, applied_at)
                 VALUES (1, 'data_ai_assets_foundation', ?)
+                """,
+                (utc_now(),),
+            )
+            connection.execute(
+                """
+                INSERT OR IGNORE INTO schema_migrations (version, name, applied_at)
+                VALUES (4, 'minimum_production_loop', ?)
                 """,
                 (utc_now(),),
             )

@@ -1,6 +1,7 @@
 import tempfile
 import unittest
 import sqlite3
+from contextlib import closing
 from pathlib import Path
 
 from idcops.service import IncidentService
@@ -94,7 +95,7 @@ class InvestigationTraceTests(unittest.TestCase):
 
     def test_existing_database_is_migrated_without_dropping_incidents_table(self):
         path = str(Path(self.tempdir.name) / "legacy.db")
-        with sqlite3.connect(path) as connection:
+        with closing(sqlite3.connect(path)) as connection:
             connection.execute(
                 """
                 CREATE TABLE incidents (

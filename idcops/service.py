@@ -23,6 +23,8 @@ from .lab_scenarios import list_scenarios, scenario_events
 from .models import NormalizedInput, RuleAnalysis, utc_now
 from .operations import OperationService
 from .providers import ProviderRegistry
+from .production import ProductionGovernance
+from .public_datasets import PublicDatasetService
 from .rules import analyze_rules
 from .releases import ReleaseManager
 from .rag_trace import RagTraceRecorder
@@ -160,6 +162,8 @@ class IncidentService:
         self.backups = BackupService(store)
         self.knowledge = knowledge or KnowledgeBase(registry=self.assets)
         self.integrations = integrations or IntegrationHub()
+        self.production = ProductionGovernance(store, self.ingest)
+        self.public_datasets = PublicDatasetService(store, self.production)
 
     def ingest_platform_event(self, payload: Mapping[str, Any]) -> Dict[str, Any]:
         """Accept one simulated platform event through the production-shaped boundary."""

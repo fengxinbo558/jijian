@@ -39,3 +39,19 @@ def can_review_operation(role: str) -> bool:
         "ai_admin",
         "super_admin",
     }
+
+
+def can_view_governance(role: str) -> bool:
+    return normalize_role(role) in VALID_ROLES
+
+
+def can_manage_maintenance(role: str) -> bool:
+    return normalize_role(role) in {"facility_lead", "interface_person", "ai_admin", "super_admin"}
+
+
+def can_manage_incident_governance(role: str) -> bool:
+    return normalize_role(role) in {"interface_person", "ai_admin", "super_admin"}
+
+
+def can_manage_trust_data(role: str) -> bool:
+    return normalize_role(role) in {"ai_admin", "super_admin"}

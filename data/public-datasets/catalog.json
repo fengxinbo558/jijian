@@ -1,0 +1,74 @@
+[
+  {
+    "id": "loghub-linux",
+    "name": "LogHub Linux 2k",
+    "data_type": "system_logs",
+    "project_url": "https://github.com/logpai/loghub",
+    "sample_url": "https://raw.githubusercontent.com/logpai/loghub/master/Linux/Linux_2k.log",
+    "format": "log_text",
+    "usage": "Linux日志解析、重复聚合和异常线索提取",
+    "license_summary": "LogHub许可限定研究或学术使用，并要求引用仓库及论文、保留许可；不得直接作为商用训练数据",
+    "distribution_policy": "local_cache_only",
+    "truth_level": "真实或实验室系统日志，不代表客户现场"
+  },
+  {
+    "id": "gaia-aiops",
+    "name": "GAIA AIOps",
+    "data_type": "metrics_and_logs",
+    "project_url": "https://github.com/CloudWise-OpenSource/GAIA-DataSet",
+    "sample_url": "",
+    "format": "gaia_bundle",
+    "usage": "带标签的指标异常、变化点、日志语义和故障定位测试",
+    "license_summary": "仓库README称Apache-2.0，但当前LICENSE文件为GPL-2.0，许可标识不一致；只允许手工研究测试，商用前必须法务确认",
+    "distribution_policy": "manual_local_import",
+    "truth_level": "脱敏合作方数据和数据集样本，不代表客户现场"
+  },
+  {
+    "id": "otel-demo",
+    "name": "OpenTelemetry Astronomy Shop",
+    "data_type": "logs_metrics_traces",
+    "project_url": "https://github.com/open-telemetry/opentelemetry-demo",
+    "sample_url": "",
+    "format": "runtime_generator",
+    "usage": "多服务日志、指标、调用链关联和故障注入",
+    "license_summary": "Apache-2.0；运行和分发时保留许可证与声明",
+    "distribution_policy": "run_locally",
+    "truth_level": "近真实微服务测试环境生成数据"
+  },
+  {
+    "id": "microsoft-aiopslab",
+    "name": "Microsoft AIOpsLab",
+    "data_type": "fault_injection_telemetry",
+    "project_url": "https://github.com/microsoft/AIOpsLab",
+    "sample_url": "",
+    "format": "runtime_generator",
+    "usage": "部署微服务、注入故障、生成负载并评估AIOps Agent",
+    "license_summary": "MIT；运行或分发上游代码时保留版权与许可声明",
+    "distribution_policy": "run_locally",
+    "truth_level": "受控故障注入测试数据"
+  },
+  {
+    "id": "backblaze-smart",
+    "name": "Backblaze Drive Stats",
+    "data_type": "disk_smart",
+    "project_url": "https://www.backblaze.com/cloud-storage/resources/hard-drive-test-data",
+    "sample_url": "https://f001.backblazeb2.com/file/Backblaze-Hard-Drive-Data/Drive_Stats_Schema_Current.csv",
+    "format": "backblaze_csv",
+    "usage": "磁盘SMART字段、趋势和失败标签导入验证",
+    "license_summary": "可使用并销售衍生作品，但不可销售原始数据；必须注明Backblaze来源",
+    "distribution_policy": "local_cache_only",
+    "truth_level": "真实数据中心每日磁盘快照；默认轻量样本仅下载字段定义"
+  },
+  {
+    "id": "dmtf-redfish",
+    "name": "DMTF Redfish Mockups",
+    "data_type": "bmc_hardware",
+    "project_url": "https://redfish.dmtf.org/redfish/mockups/v1",
+    "sample_url": "https://raw.githubusercontent.com/DMTF/Redfish-Mockup-Server/main/public-rackmount1/Systems/437XR1138R2/index.json",
+    "format": "redfish_json",
+    "usage": "BMC服务器、刀片、风扇、电源、存储、PDU和遥测字段适配",
+    "license_summary": "BSD-3-Clause；保留版权、条件与免责声明，不使用DMTF或贡献者名义背书",
+    "distribution_policy": "local_cache_only",
+    "truth_level": "协议与字段真实，数值为官方Mockup而非生产故障"
+  }
+]

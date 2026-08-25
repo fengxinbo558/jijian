@@ -163,3 +163,58 @@ def project_integration_event(event: Mapping[str, Any]) -> Dict[str, Any]:
     value.pop("normalized", None)
     value["raw_available_by_break_glass"] = True
     return value
+
+
+def project_production_alert(alert: Mapping[str, Any], role: str) -> Dict[str, Any]:
+    """Keep lifecycle evidence visible while hiding source payload for normal roles."""
+
+    normalized_role = normalize_role(role)
+    value = _redact_value(copy.deepcopy(dict(alert)))
+    if normalized_role not in {"ai_admin", "super_admin"}:
+        value.pop("payload", None)
+    if normalized_role == "onsite_operator":
+        allowed = {
+            "id",
+            "source_system",
+            "signal_type",
+            "site",
+            "entity_key",
+            "entity",
+            "severity",
+            "summary",
+            "lifecycle_status",
+            "incident_id",
+            "last_seen_at",
+            "occurrence_count",
+            "suppression_reason",
+            "requires_service_validation",
+            "data_quality",
+        }
+        value = {key: item for key, item in value.items() if key in allowed}
+    value["access_scope"] = {
+        "role": normalized_role,
+        "raw_payload_visible": normalized_role in {"ai_admin", "super_admin"},
+    }
+    return value
+
+
+def project_public_dataset(item: Mapping[str, Any], role: str) -> Dict[str, Any]:
+    """Expose catalog facts to all roles without leaking local cache paths."""
+
+    normalized_role = normalize_role(role)
+    value = _redact_value(copy.deepcopy(dict(item)))
+    last_import = value.get("last_import")
+    if isinstance(last_import, dict) and normalized_role not in {"ai_admin", "super_admin"}:
+        value["last_import"] = {
+            key: last_import.get(key)
+            for key in (
+                "dataset_id",
+                "status",
+                "record_count",
+                "alert_count",
+                "error_count",
+                "created_at",
+                "completed_at",
+            )
+        }
+    return value

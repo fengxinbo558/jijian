@@ -1,0 +1,330 @@
+{
+  "started_at": "2026-08-25T09:39:59+00:00",
+  "finished_at": "2026-08-25T09:39:59+00:00",
+  "summary": {
+    "cases_passed": 12,
+    "cases_total": 12,
+    "checks_passed": 34,
+    "checks_total": 34
+  },
+  "scope": "deterministic_governance_and_safety_baseline",
+  "limitations": [
+    "测试使用合成事件和临时数据库，不代表十万台真实生产负载。",
+    "公开数据只能验证解析、去重和接口合同，不能证明客户现场定位准确率。",
+    "需要真实 NMS、BMC、动环、OMS、日志与值班数据完成现场验收。"
+  ],
+  "results": [
+    {
+      "id": "PL-01",
+      "title": "TOR上游故障抑制下游服务器断连",
+      "risk": "告警风暴与重复派单",
+      "expected": "下游告警保留但被抑制，并关联上游事故",
+      "passed": true,
+      "checks": [
+        {
+          "name": "下游生命周期",
+          "actual": "suppressed",
+          "expected": "suppressed",
+          "passed": true
+        },
+        {
+          "name": "下游不新建事故",
+          "actual": false,
+          "expected": false,
+          "passed": true
+        },
+        {
+          "name": "复用上游事故",
+          "actual": "INC-PL-001",
+          "expected": "INC-PL-001",
+          "passed": true
+        }
+      ]
+    },
+    {
+      "id": "PL-02",
+      "title": "端口抖动后收到恢复信号",
+      "risk": "恢复即误结单",
+      "expected": "原告警进入恢复待验证，事故不自动关闭",
+      "passed": true,
+      "checks": [
+        {
+          "name": "更新同一告警",
+          "actual": "ALT-8C311AA0E4FE",
+          "expected": "ALT-8C311AA0E4FE",
+          "passed": true
+        },
+        {
+          "name": "恢复待验证",
+          "actual": true,
+          "expected": true,
+          "passed": true
+        },
+        {
+          "name": "事故未自动关闭",
+          "actual": "new",
+          "expected": "new",
+          "passed": true
+        }
+      ]
+    },
+    {
+      "id": "PL-03",
+      "title": "维护窗口内产生相同告警",
+      "risk": "计划操作触发无效事故",
+      "expected": "告警被维护静默且不创建事故",
+      "passed": true,
+      "checks": [
+        {
+          "name": "维护静默",
+          "actual": "silenced",
+          "expected": "silenced",
+          "passed": true
+        },
+        {
+          "name": "不创建事故",
+          "actual": false,
+          "expected": false,
+          "passed": true
+        },
+        {
+          "name": "仍保存告警",
+          "actual": 1,
+          "expected": 1,
+          "passed": true
+        }
+      ]
+    },
+    {
+      "id": "PL-04",
+      "title": "采集器断开导致设备无数据",
+      "risk": "把采集故障误判成设备故障",
+      "expected": "来源标记为链路异常，不生成设备事故",
+      "passed": true,
+      "checks": [
+        {
+          "name": "识别采集链路问题",
+          "actual": true,
+          "expected": true,
+          "passed": true
+        },
+        {
+          "name": "覆盖率",
+          "actual": 0.0,
+          "expected": 0.0,
+          "passed": true
+        },
+        {
+          "name": "不伪造设备事故",
+          "actual": 0,
+          "expected": 0,
+          "passed": true
+        }
+      ]
+    },
+    {
+      "id": "PL-05",
+      "title": "OMS机架位与现场扫码记录冲突",
+      "risk": "对错误机器执行操作",
+      "expected": "生成身份冲突并阻止现场操作",
+      "passed": true,
+      "checks": [
+        {
+          "name": "生成冲突",
+          "actual": 1,
+          "expected": 1,
+          "passed": true
+        },
+        {
+          "name": "保护字段阻止操作",
+          "actual": true,
+          "expected": true,
+          "passed": true
+        },
+        {
+          "name": "不静默覆盖OMS值",
+          "actual": "BJYZ-A-01-01",
+          "expected": "BJYZ-A-01-01",
+          "passed": true
+        }
+      ]
+    },
+    {
+      "id": "PL-06",
+      "title": "故障前存在网卡配置变更",
+      "risk": "时间接近就确认根因",
+      "expected": "变更只作为候选证据",
+      "passed": true,
+      "checks": [
+        {
+          "name": "变更已保存",
+          "actual": 1,
+          "expected": 1,
+          "passed": true
+        },
+        {
+          "name": "因果等级",
+          "actual": "candidate_only",
+          "expected": "candidate_only",
+          "passed": true
+        }
+      ]
+    },
+    {
+      "id": "PL-07",
+      "title": "BMC与OMS报告的完整SN不一致",
+      "risk": "跨源身份误合并",
+      "expected": "保留两个来源并生成阻断冲突",
+      "passed": true,
+      "checks": [
+        {
+          "name": "生成冲突",
+          "actual": 1,
+          "expected": 1,
+          "passed": true
+        },
+        {
+          "name": "保护字段阻止操作",
+          "actual": true,
+          "expected": true,
+          "passed": true
+        },
+        {
+          "name": "不静默覆盖OMS值",
+          "actual": "SERVER-SN-001",
+          "expected": "SERVER-SN-001",
+          "passed": true
+        }
+      ]
+    },
+    {
+      "id": "PL-08",
+      "title": "区域温升与单点传感器异常并存",
+      "risk": "没有拓扑证据就强行合并",
+      "expected": "不同实体不自动合并，等待动环拓扑或人工确认",
+      "passed": true,
+      "checks": [
+        {
+          "name": "不同实体不自动合并",
+          "actual": true,
+          "expected": true,
+          "passed": true
+        },
+        {
+          "name": "保留两个事故",
+          "actual": 2,
+          "expected": 2,
+          "passed": true
+        }
+      ]
+    },
+    {
+      "id": "PL-09",
+      "title": "夜间单人值班接到P1事故",
+      "risk": "无人确认或责任链丢失",
+      "expected": "记录值班、分派、确认与升级负责人",
+      "passed": true,
+      "checks": [
+        {
+          "name": "当前值班可查",
+          "actual": 1,
+          "expected": 1,
+          "passed": true
+        },
+        {
+          "name": "值班确认收到",
+          "actual": "acknowledged",
+          "expected": "acknowledged",
+          "passed": true
+        },
+        {
+          "name": "升级负责人",
+          "actual": "lead-on-call",
+          "expected": "lead-on-call",
+          "passed": true
+        }
+      ]
+    },
+    {
+      "id": "PL-10",
+      "title": "重复告警恢复后再次复发",
+      "risk": "重复工单或把复发吞掉",
+      "expected": "持续期内去重，恢复后的复发生成新活动告警",
+      "passed": true,
+      "checks": [
+        {
+          "name": "持续期内去重",
+          "actual": "ALT-09B791744546",
+          "expected": "ALT-09B791744546",
+          "passed": true
+        },
+        {
+          "name": "重复次数",
+          "actual": 2,
+          "expected": 2,
+          "passed": true
+        },
+        {
+          "name": "复发生成新告警",
+          "actual": true,
+          "expected": true,
+          "passed": true
+        },
+        {
+          "name": "复发生成新事故",
+          "actual": 2,
+          "expected": 2,
+          "passed": true
+        }
+      ]
+    },
+    {
+      "id": "PL-11",
+      "title": "监控恢复但业务仍未验证",
+      "risk": "信号恢复被当成业务恢复",
+      "expected": "明确要求业务验证，事故保持原状态",
+      "passed": true,
+      "checks": [
+        {
+          "name": "要求业务验证",
+          "actual": true,
+          "expected": true,
+          "passed": true
+        },
+        {
+          "name": "保留事故关联",
+          "actual": "INC-PL-001",
+          "expected": "INC-PL-001",
+          "passed": true
+        },
+        {
+          "name": "事故仍未解决",
+          "actual": "new",
+          "expected": "new",
+          "passed": true
+        }
+      ]
+    },
+    {
+      "id": "PL-12",
+      "title": "两个无关故障同时出现",
+      "risk": "AI或规则错误合并",
+      "expected": "两个实体和信号形成两个独立事故",
+      "passed": true,
+      "checks": [
+        {
+          "name": "事故ID不同",
+          "actual": true,
+          "expected": true,
+          "passed": true
+        },
+        {
+          "name": "两个独立事故",
+          "actual": 2,
+          "expected": 2,
+          "passed": true
+        }
+      ]
+    }
+  ]
+}

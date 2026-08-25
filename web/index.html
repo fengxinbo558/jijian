@@ -31,6 +31,10 @@
           <span class="rail-icon" aria-hidden="true">源</span>
           <span>数据来源</span>
         </button>
+        <button class="rail-button" id="governanceRailButton" data-action="open-governance" type="button">
+          <span class="rail-icon" aria-hidden="true">治</span>
+          <span>告警治理</span>
+        </button>
         <button class="rail-button" data-action="open-facilities" type="button">
           <span class="rail-icon" aria-hidden="true">房</span>
           <span>机房等级</span>
@@ -383,6 +387,169 @@
           <button class="primary-button" data-action="create-backup" type="button">创建并校验备份</button>
           <div class="backup-list" id="backupList" aria-live="polite"></div>
         </section>
+      </section>
+    </div>
+  </dialog>
+
+  <dialog class="work-dialog governance-dialog" id="governanceDialog" aria-labelledby="governanceTitle">
+    <div class="dialog-frame governance-frame">
+      <header class="dialog-header governance-header">
+        <div>
+          <p class="eyebrow">PRODUCTION SIGNAL GATES</p>
+          <h2 id="governanceTitle">告警治理与可信数据</h2>
+          <p>先判断数据是否可信、是否重复、是否处于维护或由上游故障引起，再把真正需要处理的告警交给 AI 调查和现场作业。</p>
+        </div>
+        <button class="icon-button" data-close-dialog type="button" aria-label="关闭告警治理">×</button>
+      </header>
+
+      <section class="signal-gates" aria-label="信号进入事故前的五道闸门">
+        <article><small>01 来源</small><strong id="gatePipeline">0</strong><span>采集异常</span></article>
+        <i aria-hidden="true">›</i>
+        <article><small>02 身份</small><strong id="gateIdentity">0</strong><span>待处理冲突</span></article>
+        <i aria-hidden="true">›</i>
+        <article><small>03 降噪</small><strong id="gateNoise">0</strong><span>已抑制/静默</span></article>
+        <i aria-hidden="true">›</i>
+        <article><small>04 事故</small><strong id="gateActive">0</strong><span>活动告警</span></article>
+        <i aria-hidden="true">›</i>
+        <article><small>05 责任</small><strong id="gateOwner">0</strong><span>尚未分派</span></article>
+      </section>
+
+      <nav class="governance-tabs" aria-label="告警治理栏目">
+        <button class="governance-tab is-active" data-governance-tab="alerts" type="button">告警与降噪</button>
+        <button class="governance-tab" data-governance-tab="trust" type="button">可信数据</button>
+        <button class="governance-tab" data-governance-tab="duty" type="button">值班与责任</button>
+        <button class="governance-tab" data-governance-tab="datasets" type="button">公开数据测试</button>
+      </nav>
+
+      <section class="governance-panel is-active" data-governance-panel="alerts" aria-labelledby="governanceAlertsTitle">
+        <header class="governance-section-heading">
+          <div><p class="eyebrow">ALERT LIFECYCLE</p><h3 id="governanceAlertsTitle">不是每条信号都形成事故</h3></div>
+          <button class="secondary-button" data-action="refresh-governance" type="button">刷新治理结果</button>
+        </header>
+        <p class="panel-explainer">“发生”表示仍需要关注；“恢复待验证”只说明监控信号恢复，业务是否正常仍需确认；重复、维护静默和下游抑制都有记录，但不会重复派单。</p>
+        <div class="governance-alert-list" id="governanceAlertList" aria-live="polite"></div>
+
+        <section class="governance-console" data-governance-permission="incident">
+          <div><p class="eyebrow">PRODUCTION-SHAPED INPUT</p><h3>发送一条经过治理的测试告警</h3><p>这里走真实平台以后会使用的入口。设备身份必须明确，AI不能猜SN或设备名。</p></div>
+          <form id="productionAlertForm">
+            <label for="productionAlertPayload">告警 JSON</label>
+            <textarea id="productionAlertPayload" name="payload" rows="12" spellcheck="false" aria-describedby="productionAlertHint" required>{
+  "source_system": "network_nms",
+  "source_event_id": "PROD-NMS-001",
+  "site": "BJYZ",
+  "entity": {"device_name": "HB-BJYZ-TOR-01", "device_type": "switch"},
+  "signal_type": "link_down",
+  "severity": "critical",
+  "summary": "TOR上联端口中断",
+  "raw_payload": {"message": "HundredGigE1/0/1 changed state to DOWN"}
+}</textarea>
+            <small id="productionAlertHint">修改状态为 recovered 可测试恢复；增加 upstream_entity_key 可测试上游抑制。</small>
+            <button class="primary-button" type="submit">经过治理后送入调查</button>
+          </form>
+        </section>
+
+        <section class="governance-console" data-governance-permission="maintenance">
+          <div><p class="eyebrow">MAINTENANCE WINDOW</p><h3>登记维护窗口</h3><p>窗口内的告警仍保存，但标记为维护静默，不自动创建事故。</p><div id="maintenanceWindowList" class="maintenance-window-list" aria-live="polite"></div></div>
+          <form id="maintenanceWindowForm" class="compact-governance-form">
+            <label>机房编码<input name="site" value="BJYZ" required></label>
+            <label>实体标识<input name="entity_key" placeholder="可留空；如 name:HB-BJYZ-TOR-01"></label>
+            <label>开始时间<input name="starts_at" type="datetime-local" required></label>
+            <label>结束时间<input name="ends_at" type="datetime-local" required></label>
+            <label class="span-two">维护原因<input name="reason" required placeholder="例如：TOR交换机版本升级"></label>
+            <button class="secondary-button" type="submit">保存维护窗口</button>
+          </form>
+        </section>
+      </section>
+
+      <section class="governance-panel" data-governance-panel="trust" aria-labelledby="governanceTrustTitle">
+        <header class="governance-section-heading">
+          <div><p class="eyebrow">TRUSTED DATA</p><h3 id="governanceTrustTitle">先判断“数据还能不能信”</h3></div>
+          <span class="safety-badge">身份、时间与权限不交给模型猜</span>
+        </header>
+        <div class="trust-layout">
+          <section class="trust-card"><h4>采集链路健康</h4><div id="sourceHealthList" aria-live="polite"></div></section>
+          <section class="trust-card"><h4>资产身份冲突</h4><div id="identityConflictList" aria-live="polite"></div></section>
+          <section class="trust-card"><h4>最近变更</h4><div id="changeEventList" aria-live="polite"></div></section>
+        </div>
+
+        <div class="governance-form-grid" data-governance-permission="trust">
+          <form class="trust-form" id="sourceHealthForm">
+            <h4>模拟采集器状态</h4>
+            <label>数据源<input name="source_system" value="otel_collector" required></label>
+            <label>连接状态<select name="connection_status"><option value="connected">正常</option><option value="degraded">降级</option><option value="disconnected">断开</option></select></label>
+            <label>预期设备数<input name="expected_entities" type="number" min="0" value="100"></label>
+            <label>有数据设备数<input name="reporting_entities" type="number" min="0" value="72"></label>
+            <label>队列积压<input name="queue_depth" type="number" min="0" value="0"></label>
+            <label>丢弃数量<input name="dropped_count" type="number" min="0" value="0"></label>
+            <button class="secondary-button" type="submit">更新采集状态</button>
+          </form>
+          <form class="trust-form" id="identityAssertionForm">
+            <h4>登记资产字段来源</h4>
+            <label>实体标识<input name="entity_key" value="sn:SERVER-SN-001" required></label>
+            <label>来源<select name="source_system"><option value="oms_cmdb">OMS/CMDB</option><option value="onsite_scan">现场扫码</option><option value="bmc_redfish">BMC/Redfish</option><option value="network_nms">网络平台</option></select></label>
+            <label>字段<select name="field_name"><option value="rack_position">机架位</option><option value="sn">完整SN</option><option value="device_name">设备名</option><option value="bmc_ip">BMC IP</option><option value="network_port">网络端口</option></select></label>
+            <label>字段值<input name="field_value" value="BJYZ-A-01-01" required></label>
+            <button class="secondary-button" type="submit">保存并检查冲突</button>
+          </form>
+        </div>
+
+        <form class="change-form" id="changeEventForm" data-governance-permission="incident">
+          <h4>补充一次变更记录</h4>
+          <label>机房<input name="site" value="BJYZ" required></label>
+          <label>实体标识<input name="entity_key" value="sn:SERVER-SN-001" required></label>
+          <label>变更类型<select name="change_type"><option value="deployment">发布</option><option value="configuration">配置</option><option value="firmware">固件</option><option value="asset_move">资产搬迁</option><option value="network_port">端口操作</option></select></label>
+          <label>变更摘要<input name="summary" placeholder="例如：升级网卡固件到1.1" required></label>
+          <button class="secondary-button" type="submit">保存为候选证据</button>
+        </form>
+      </section>
+
+      <section class="governance-panel" data-governance-panel="duty" aria-labelledby="governanceDutyTitle">
+        <header class="governance-section-heading">
+          <div><p class="eyebrow">OWNERSHIP &amp; ESCALATION</p><h3 id="governanceDutyTitle">谁收到、谁确认、什么时候升级</h3></div>
+        </header>
+        <p class="panel-explainer">夜间只有一人时，可以先确认收到并填写延后原因；P1超时才升级负责人。系统记录责任链，但不替人承担操作决定。</p>
+        <div class="duty-layout">
+          <section class="trust-card"><h4>当前值班</h4><div id="rosterList" aria-live="polite"></div></section>
+          <section class="trust-card"><h4>事故分派</h4><div id="assignmentList" aria-live="polite"></div></section>
+          <section class="trust-card"><h4>人工纠正关联</h4><div id="feedbackList" aria-live="polite"></div></section>
+        </div>
+        <div class="governance-form-grid">
+          <form class="trust-form" id="rosterForm" data-governance-permission="maintenance">
+            <h4>登记值班人员</h4>
+            <label>机房<input name="site" value="BJYZ" required></label>
+            <label>团队<input name="team" value="onsite" required></label>
+            <label>值班人员<input name="person" value="night-operator-a" required></label>
+            <label>开始<input name="shift_start" type="datetime-local" required></label>
+            <label>结束<input name="shift_end" type="datetime-local" required></label>
+            <label>升级负责人<input name="escalation_person" value="facility-lead-a"></label>
+            <button class="secondary-button" type="submit">保存班次</button>
+          </form>
+          <form class="trust-form" id="assignmentForm" data-governance-permission="incident">
+            <h4>分派一个事故</h4>
+            <label>事故ID<input name="incident_id" placeholder="INC-…" required></label>
+            <label>负责人<input name="assignee" value="night-operator-a" required></label>
+            <label>团队<input name="team" value="onsite" required></label>
+            <label>优先级<select name="priority"><option value="p1">P1 · 5分钟确认</option><option value="p2">P2 · 15分钟</option><option value="p3">P3 · 2小时</option><option value="p4">P4 · 8小时</option></select></label>
+            <button class="secondary-button" type="submit">分派并开始计时</button>
+          </form>
+          <form class="trust-form" id="correlationFeedbackForm" data-governance-permission="incident">
+            <h4>纠正一次AI/规则关联</h4>
+            <label>动作<select name="action"><option value="mark_unrelated">标记无关</option><option value="split">拆分</option><option value="merge">合并</option><option value="confirm_related">确认有关</option></select></label>
+            <label>告警ID<input name="alert_id" placeholder="ALT-…"></label>
+            <label>事故ID<input name="incident_id" placeholder="INC-…"></label>
+            <label>目标事故ID<input name="target_incident_id" placeholder="只有合并时填写"></label>
+            <label class="span-two">纠正原因<input name="reason" required placeholder="写明现场或平台证据"></label>
+            <button class="secondary-button" type="submit">保存纠正，不删除原记录</button>
+          </form>
+        </div>
+      </section>
+
+      <section class="governance-panel" data-governance-panel="datasets" aria-labelledby="governanceDatasetsTitle">
+        <header class="governance-section-heading">
+          <div><p class="eyebrow">PUBLIC EVIDENCE LAB</p><h3 id="governanceDatasetsTitle">公开数据只用于测试，不冒充客户现场</h3></div>
+        </header>
+        <p class="panel-explainer">每个来源都显示数据真实性、许可证和保存方式。允许下载的轻量样本只保存在本机测试缓存；大体量或受限数据需要手工导入；运行时项目会明确要求本地启动。</p>
+        <div class="dataset-grid" id="publicDatasetGrid" aria-live="polite"></div>
       </section>
     </div>
   </dialog>

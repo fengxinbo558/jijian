@@ -6,6 +6,7 @@ import hashlib
 import os
 import sqlite3
 import uuid
+from contextlib import closing
 from pathlib import Path
 from typing import Any, Dict, Optional
 
@@ -30,7 +31,7 @@ class BackupService:
         target = self.directory / f"idc-ai-ops-{timestamp}-{backup_id}.sqlite3"
         started = utc_now()
         with self.store.connect() as source:
-            with sqlite3.connect(str(target)) as destination:
+            with closing(sqlite3.connect(str(target))) as destination:
                 source.backup(destination)
         size = target.stat().st_size
         checksum = self._checksum(target)
@@ -72,7 +73,7 @@ class BackupService:
     @staticmethod
     def verify_file(path: Path) -> Dict[str, Any]:
         try:
-            with sqlite3.connect(str(path)) as connection:
+            with closing(sqlite3.connect(str(path))) as connection:
                 quick_check = str(connection.execute("PRAGMA quick_check").fetchone()[0])
                 tables = [
                     str(row[0])

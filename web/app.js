@@ -20,6 +20,19 @@ const state = {
     selectedAgentRun: null,
     backups: [],
   },
+  governance: {
+    tab: "alerts",
+    overview: {},
+    alerts: [],
+    maintenance: [],
+    sourceHealth: [],
+    identityConflicts: [],
+    changes: [],
+    rosters: [],
+    assignments: [],
+    feedback: [],
+    datasets: [],
+  },
   admin: {
     tab: "database",
     summary: null,
@@ -77,6 +90,7 @@ const publishConfirmDialog = document.querySelector("#publishConfirmDialog");
 const operationDialog = document.querySelector("#operationDialog");
 const cameraDialog = document.querySelector("#cameraDialog");
 const labDialog = document.querySelector("#labDialog");
+const governanceDialog = document.querySelector("#governanceDialog");
 
 function escapeHtml(value) {
   return String(value ?? "")
@@ -840,9 +854,11 @@ function setRole(role, preserveActor = false) {
   labButton.classList.toggle("is-locked", !isAdmin);
   labButton.setAttribute("aria-description", isAdmin ? "打开接入实验室" : "仅 AI 管理员与最高管理员可以打开");
   document.querySelector("#breakGlassPanel").hidden = state.role !== "super_admin";
+  applyGovernancePermissions();
   renderRoleBrief();
   showToast(`已切换到${roleNames[state.role]}工作台，当前账号 ${state.actor}`);
   if (state.incidents.length) loadIncidents(state.selectedId).catch((error) => showToast(error.message, true));
+  if (governanceDialog.open) loadGovernance().catch((error) => showToast(error.message, true));
 }
 
 function adminSummaryCard(label, value, note) {
@@ -1247,15 +1263,15 @@ const operationStatusNames = {
 };
 
 function canImportOperation() {
-  return ["interface_person", "ai_admin"].includes(state.role);
+  return ["interface_person", "ai_admin", "super_admin"].includes(state.role);
 }
 
 function canDecideOperationPermission() {
-  return ["interface_person", "facility_lead", "ai_admin"].includes(state.role);
+  return ["interface_person", "facility_lead", "ai_admin", "super_admin"].includes(state.role);
 }
 
 function canOperate() {
-  return ["onsite_operator", "ai_admin"].includes(state.role);
+  return ["onsite_operator", "ai_admin", "super_admin"].includes(state.role);
 }
 
 function renderOperationSession() {
@@ -1666,6 +1682,306 @@ async function openRawAccess(form) {
   showToast(`原始记录已打开，审计编号 ${result.audit_id}`);
 }
 
+const governanceStateNames = {
+  firing: "正在发生",
+  acknowledged: "已确认",
+  recovered: "恢复待验证",
+  suppressed: "被上游抑制",
+  silenced: "维护静默",
+  expired: "已过期",
+};
+
+const assignmentStateNames = {
+  assigned: "待确认",
+  acknowledged: "已确认收到",
+  deferred: "已说明延后",
+  escalated: "已升级",
+  reassigned: "已改派",
+};
+
+function canManageIncidentGovernance() {
+  return ["interface_person", "ai_admin", "super_admin"].includes(state.role);
+}
+
+function canManageMaintenanceGovernance() {
+  return ["facility_lead", "interface_person", "ai_admin", "super_admin"].includes(state.role);
+}
+
+function canManageTrustGovernance() {
+  return ["ai_admin", "super_admin"].includes(state.role);
+}
+
+function applyGovernancePermissions() {
+  document.querySelectorAll("[data-governance-permission]").forEach((element) => {
+    const permission = element.dataset.governancePermission;
+    const allowed = permission === "trust"
+      ? canManageTrustGovernance()
+      : permission === "maintenance"
+        ? canManageMaintenanceGovernance()
+        : canManageIncidentGovernance();
+    element.hidden = !allowed;
+  });
+}
+
+function activateGovernanceTab(name) {
+  state.governance.tab = name;
+  document.querySelectorAll("[data-governance-tab]").forEach((button) => {
+    const active = button.dataset.governanceTab === name;
+    button.classList.toggle("is-active", active);
+    button.setAttribute("aria-current", active ? "page" : "false");
+  });
+  document.querySelectorAll("[data-governance-panel]").forEach((panel) => {
+    panel.classList.toggle("is-active", panel.dataset.governancePanel === name);
+  });
+}
+
+function governanceEmpty(message) {
+  return `<div class="admin-empty">${escapeHtml(message)}</div>`;
+}
+
+function renderGovernanceOverview() {
+  const overview = state.governance.overview || {};
+  document.querySelector("#gatePipeline").textContent = overview.pipeline_problems || 0;
+  document.querySelector("#gateIdentity").textContent = overview.identity_conflicts || 0;
+  document.querySelector("#gateNoise").textContent = (overview.suppressed_alerts || 0) + (overview.silenced_alerts || 0);
+  document.querySelector("#gateActive").textContent = overview.active_alerts || 0;
+  document.querySelector("#gateOwner").textContent = overview.unassigned_incidents || 0;
+}
+
+function renderGovernanceAlerts() {
+  const target = document.querySelector("#governanceAlertList");
+  if (!state.governance.alerts.length) {
+    target.innerHTML = governanceEmpty("还没有经过治理入口的告警。接口人或管理员可发送测试告警，公开样本导入也会走同一个入口。");
+    return;
+  }
+  target.innerHTML = state.governance.alerts.map((item) => {
+    const quality = item.data_quality || {};
+    const score = Math.max(0, Math.min(100, Number(quality.score ?? 0)));
+    const incident = item.incident_id || "未形成事故";
+    const reason = item.suppression_reason || (item.requires_service_validation ? "监控已恢复，仍需业务验证" : "保留原始治理记录");
+    const canAcknowledge = canManageIncidentGovernance() && item.lifecycle_status === "firing";
+    return `<article class="governance-alert-row">
+      <div><small>${escapeHtml(item.source_system)}</small><strong>${escapeHtml(item.site || "未知机房")}</strong><span>${escapeHtml(formatTime(item.last_seen_at))}</span></div>
+      <div><small>${escapeHtml(item.signal_type)}</small><strong title="${escapeHtml(item.summary)}">${escapeHtml(item.summary)}</strong><span>${escapeHtml(item.entity_key)} · 累计 ${escapeHtml(item.occurrence_count)} 次</span></div>
+      <div><small>事故与处置</small><strong>${escapeHtml(incident)}</strong><span>${escapeHtml(reason)}</span></div>
+      <div><small>数据质量 ${escapeHtml(score)}</small><div class="quality-meter" aria-label="数据质量 ${escapeHtml(score)} 分"><i style="width:${escapeHtml(score)}%"></i></div><span>${quality.operation_blocked ? "身份冲突，禁止操作" : "身份未被冲突阻断"}</span></div>
+      <div><span class="alert-state" data-state="${escapeHtml(item.lifecycle_status)}">${escapeHtml(governanceStateNames[item.lifecycle_status] || item.lifecycle_status)}</span>${canAcknowledge ? `<button class="text-button" data-action="acknowledge-production-alert" data-alert-id="${escapeHtml(item.id)}" type="button">确认收到</button>` : ""}</div>
+    </article>`;
+  }).join("");
+}
+
+function renderMaintenanceWindows() {
+  const target = document.querySelector("#maintenanceWindowList");
+  target.innerHTML = state.governance.maintenance.length ? state.governance.maintenance.slice(0, 5).map((item) => `<div><strong>${escapeHtml(item.site || "全部机房")} · ${escapeHtml(item.reason)}</strong><span>${escapeHtml(formatTime(item.starts_at))}—${escapeHtml(formatTime(item.ends_at))}${item.entity_key ? ` · ${escapeHtml(item.entity_key)}` : ""}</span></div>`).join("") : `<span>当前没有已登记的维护窗口。</span>`;
+}
+
+function renderSourceHealth() {
+  const target = document.querySelector("#sourceHealthList");
+  if (!canManageTrustGovernance()) {
+    target.innerHTML = governanceEmpty("当前角色只看治理结果；采集链路明细仅 AI 管理员和最高管理员可见。");
+    return;
+  }
+  target.innerHTML = state.governance.sourceHealth.length ? state.governance.sourceHealth.map((item) => `
+    <div class="trust-record"><strong>${escapeHtml(item.source_system)}</strong><b class="${item.pipeline_problem ? "is-problem" : ""}">${item.pipeline_problem ? "链路异常" : "正常"}</b><span>${escapeHtml(item.connection_status)} · 覆盖 ${escapeHtml(item.coverage_percent)}%</span><small>积压 ${escapeHtml(item.queue_depth)} · 丢弃 ${escapeHtml(item.dropped_count)} · 接收 ${escapeHtml(item.received_count)}</small></div>`).join("") : governanceEmpty("还没有采集链路状态。接入数据或在下方模拟一个采集器状态后会出现。");
+}
+
+function renderIdentityConflicts() {
+  const target = document.querySelector("#identityConflictList");
+  target.innerHTML = state.governance.identityConflicts.length ? state.governance.identityConflicts.map((item) => {
+    const resolve = item.status === "open" && canManageTrustGovernance() ? `<div class="assignment-actions"><input class="conflict-resolution assignment-reason" aria-label="冲突核实结论" placeholder="例如：已查OMS并现场复扫，以OMS为准"><button data-action="resolve-identity-conflict" data-conflict-id="${escapeHtml(item.id)}" type="button">保存核实结论</button></div>` : "";
+    return `<div class="trust-record"><strong>${escapeHtml(item.entity_key)}</strong><b class="${item.status === "open" ? "is-problem" : ""}">${item.status === "open" ? "待处理" : "已处理"}</b><span>${escapeHtml(item.field_name)} · ${escapeHtml(item.authoritative_source)} ≠ ${escapeHtml(item.conflicting_source)}</span><small>${escapeHtml(item.authoritative_value)} ↔ ${escapeHtml(item.conflicting_value)}${item.operation_blocked ? "；已阻止现场操作" : ""}</small>${resolve}</div>`;
+  }).join("") : governanceEmpty("没有身份冲突。系统不会让模型猜测同一设备的 SN、机架位或端口。");
+}
+
+function renderChanges() {
+  const target = document.querySelector("#changeEventList");
+  target.innerHTML = state.governance.changes.length ? state.governance.changes.map((item) => `
+    <div class="trust-record"><strong>${escapeHtml(item.summary)}</strong><b>${escapeHtml(item.causality === "candidate_only" ? "候选证据" : item.causality)}</b><span>${escapeHtml(item.site)} · ${escapeHtml(item.entity_key)}</span><small>${escapeHtml(item.change_type)} · ${escapeHtml(formatTime(item.changed_at))}；时间接近不等于已经证明因果</small></div>`).join("") : governanceEmpty("没有近期变更。发布、固件、端口和资产搬迁可以作为候选证据，但不会直接判为根因。");
+}
+
+function renderRosters() {
+  const target = document.querySelector("#rosterList");
+  target.innerHTML = state.governance.rosters.length ? state.governance.rosters.map((item) => `
+    <div class="trust-record"><strong>${escapeHtml(item.person)}</strong><b>${escapeHtml(item.team)}</b><span>${escapeHtml(item.site)} · ${escapeHtml(formatTime(item.shift_start))}—${escapeHtml(formatTime(item.shift_end))}</span><small>升级负责人：${escapeHtml(item.escalation_person || "未设置")}</small></div>`).join("") : governanceEmpty("还没有值班记录。夜间单人值班时，可登记主值班人与升级负责人。");
+}
+
+function renderAssignments() {
+  const target = document.querySelector("#assignmentList");
+  target.innerHTML = state.governance.assignments.length ? state.governance.assignments.map((item) => {
+    const isAssignee = item.assignee === state.actor || canManageTrustGovernance();
+    const acknowledge = item.status === "assigned" && isAssignee ? `<button data-action="acknowledge-assignment" data-assignment-id="${escapeHtml(item.id)}" type="button">确认收到</button>` : "";
+    const defer = ["assigned", "acknowledged"].includes(item.status) && isAssignee ? `<input class="assignment-reason" aria-label="延后原因" placeholder="先处理更紧急工单，预计稍后到场"><button data-action="defer-assignment" data-assignment-id="${escapeHtml(item.id)}" type="button">说明延后</button>` : "";
+    const escalate = canManageMaintenanceGovernance() && !["escalated", "reassigned"].includes(item.status) ? `<button data-action="escalate-assignment" data-assignment-id="${escapeHtml(item.id)}" type="button">升级负责人</button>` : "";
+    return `<div class="trust-record"><strong>${escapeHtml(item.incident_id)}</strong><b class="${item.status === "assigned" ? "is-problem" : ""}">${escapeHtml(assignmentStateNames[item.status] || item.status)}</b><span>${escapeHtml(item.assignee)} · ${escapeHtml(item.priority.toUpperCase())}</span><small>应答期限：${escapeHtml(formatTime(item.due_at))}${item.deferred_reason ? `；延后：${escapeHtml(item.deferred_reason)}` : ""}${!isAssignee && item.status === "assigned" ? "；请由被分派人本人确认" : ""}</small><div class="assignment-actions">${acknowledge}${defer}${escalate}</div></div>`;
+  }).join("") : governanceEmpty("还没有事故分派。形成事故后可指定负责人和确认时限。");
+}
+
+function renderFeedback() {
+  const target = document.querySelector("#feedbackList");
+  if (!canManageIncidentGovernance()) {
+    target.innerHTML = governanceEmpty("关联纠正记录仅接口人和管理员可见。");
+    return;
+  }
+  const actionNames = { merge: "合并", split: "拆分", mark_unrelated: "标记无关", confirm_related: "确认有关" };
+  target.innerHTML = state.governance.feedback.length ? state.governance.feedback.map((item) => `
+    <div class="trust-record"><strong>${escapeHtml(actionNames[item.action] || item.action)}</strong><b>${escapeHtml(item.created_by)}</b><span>${escapeHtml(item.alert_id || item.incident_id || "关联对象")}</span><small>${escapeHtml(item.reason)} · ${escapeHtml(formatTime(item.created_at))}</small></div>`).join("") : governanceEmpty("还没有人工纠正。每次拆分、合并或标记无关都保留原记录，用于改进后续关联。");
+}
+
+function renderPublicDatasets() {
+  const target = document.querySelector("#publicDatasetGrid");
+  target.innerHTML = state.governance.datasets.map((item) => {
+    const imported = item.last_import;
+    const actionText = item.format === "runtime_generator" ? "查看运行要求" : item.sample_url ? "下载官方轻量样本并测试" : "等待本地文件导入";
+    const disabled = !canManageTrustGovernance() || (!item.sample_url && item.format !== "runtime_generator");
+    return `<article class="dataset-card"><header><h4>${escapeHtml(item.name)}</h4><span>${escapeHtml(item.data_type)}</span></header><p>${escapeHtml(item.usage)}</p><div class="dataset-meta"><div><small>数据真实性</small><strong>${escapeHtml(item.truth_level)}</strong></div><div><small>许可边界</small><strong>${escapeHtml(item.license_summary)}</strong></div><div><small>保存方式</small><strong>${escapeHtml(item.distribution_policy)}</strong></div></div><footer><span>${imported ? `最近：${escapeHtml(imported.status)} · ${escapeHtml(imported.record_count)} 条` : escapeHtml(item.ready_action)}</span><div><a class="text-button" href="${escapeHtml(item.project_url)}" target="_blank" rel="noopener noreferrer">项目资料</a><button class="secondary-button" data-action="import-public-dataset" data-dataset-id="${escapeHtml(item.id)}" type="button" ${disabled ? "disabled" : ""}>${escapeHtml(actionText)}</button></div></footer></article>`;
+  }).join("") || governanceEmpty("公开数据目录暂不可用。");
+}
+
+function renderGovernance() {
+  renderGovernanceOverview();
+  renderGovernanceAlerts();
+  renderMaintenanceWindows();
+  renderSourceHealth();
+  renderIdentityConflicts();
+  renderChanges();
+  renderRosters();
+  renderAssignments();
+  renderFeedback();
+  renderPublicDatasets();
+  applyGovernancePermissions();
+}
+
+async function loadGovernance() {
+  const requests = [
+    api("/api/production/overview"),
+    api("/api/production/alerts?limit=100"),
+    api("/api/production/maintenance"),
+    api("/api/production/identity-conflicts"),
+    api("/api/production/changes?limit=50"),
+    api("/api/production/rosters"),
+    api("/api/production/assignments"),
+    api("/api/public-datasets"),
+  ];
+  if (canManageTrustGovernance()) requests.push(api("/api/production/source-health"));
+  if (canManageIncidentGovernance()) requests.push(api("/api/production/feedback"));
+  const values = await Promise.all(requests);
+  state.governance.overview = values[0];
+  state.governance.alerts = values[1]?.items || [];
+  state.governance.maintenance = values[2]?.items || [];
+  state.governance.identityConflicts = values[3]?.items || [];
+  state.governance.changes = values[4]?.items || [];
+  state.governance.rosters = values[5]?.items || [];
+  state.governance.assignments = values[6]?.items || [];
+  state.governance.datasets = values[7]?.items || [];
+  let cursor = 8;
+  state.governance.sourceHealth = canManageTrustGovernance() ? (values[cursor++]?.items || []) : [];
+  state.governance.feedback = canManageIncidentGovernance() ? (values[cursor]?.items || []) : [];
+  renderGovernance();
+}
+
+async function openGovernance() {
+  openDialog(governanceDialog);
+  activateGovernanceTab(state.governance.tab);
+  try {
+    await loadGovernance();
+  } catch (error) {
+    showToast(`治理数据加载失败：${error.message}`, true);
+  }
+}
+
+function formObject(form) {
+  return Object.fromEntries(new FormData(form).entries());
+}
+
+function asIso(value) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) throw new Error("请填写有效时间");
+  return date.toISOString();
+}
+
+async function submitGovernanceForm(form) {
+  let path = "";
+  let payload = {};
+  let success = "已保存";
+  if (form.id === "productionAlertForm") {
+    try { payload = JSON.parse(form.elements.payload.value); } catch (_error) { throw new Error("告警 JSON 格式不正确"); }
+    path = "/api/production/alerts";
+    success = "告警已经过身份、降噪和事故闸门";
+  } else {
+    payload = formObject(form);
+    const settings = {
+      maintenanceWindowForm: ["/api/production/maintenance", "维护窗口已登记"],
+      sourceHealthForm: ["/api/production/source-health", "采集链路状态已更新"],
+      identityAssertionForm: ["/api/production/identities", "资产字段来源已记录并完成冲突检查"],
+      changeEventForm: ["/api/production/changes", "变更已保存为候选证据"],
+      rosterForm: ["/api/production/rosters", "值班记录已保存"],
+      assignmentForm: ["/api/production/assignments", "事故已分派并开始计时"],
+      correlationFeedbackForm: ["/api/production/feedback", "人工纠正已保存，原关联记录没有删除"],
+    };
+    [path, success] = settings[form.id] || [];
+    if (!path) return;
+    if (form.id === "maintenanceWindowForm") {
+      payload.starts_at = asIso(payload.starts_at);
+      payload.ends_at = asIso(payload.ends_at);
+    }
+    if (form.id === "rosterForm") {
+      payload.shift_start = asIso(payload.shift_start);
+      payload.shift_end = asIso(payload.shift_end);
+    }
+    if (form.id === "sourceHealthForm") {
+      for (const key of ["expected_entities", "reporting_entities", "queue_depth", "dropped_count"]) payload[key] = Number(payload[key] || 0);
+    }
+  }
+  const result = await api(path, { method: "POST", body: JSON.stringify(payload) });
+  const decision = result.decision ? `：${result.decision}` : "";
+  showToast(`${success}${decision}`);
+  await loadGovernance();
+  if (result.incident_created || result.incident?.id) await loadIncidents(result.incident?.id);
+}
+
+async function acknowledgeProductionAlert(button) {
+  await api(`/api/production/alerts/${encodeURIComponent(button.dataset.alertId)}/acknowledge`, { method: "POST", body: "{}" });
+  showToast("已确认收到告警；这不等于故障已经恢复");
+  await loadGovernance();
+}
+
+async function resolveIdentityConflict(button) {
+  const resolution = button.closest(".assignment-actions")?.querySelector(".conflict-resolution")?.value.trim() || "";
+  if (!resolution) throw new Error("处理身份冲突必须填写核实来源和结论");
+  await api(`/api/production/identity-conflicts/${encodeURIComponent(button.dataset.conflictId)}/resolve`, { method: "POST", body: JSON.stringify({ resolution }) });
+  showToast("身份冲突已记录为处理完成；原始两条来源仍保留");
+  await loadGovernance();
+}
+
+async function updateAssignment(button, action) {
+  const assignmentId = button.dataset.assignmentId;
+  const reason = button.closest(".assignment-actions")?.querySelector(".assignment-reason")?.value.trim() || "";
+  if (action === "defer" && !reason) throw new Error("延后必须填写原因和当前优先事项");
+  const payload = action === "escalate" ? { escalated_to: "facility-lead-on-duty" } : action === "defer" ? { reason } : {};
+  await api(`/api/production/assignments/${encodeURIComponent(assignmentId)}/${action}`, { method: "POST", body: JSON.stringify(payload) });
+  showToast(action === "acknowledge" ? "已确认收到分派" : action === "defer" ? "已记录延后原因；责任仍保留在当前值班人" : "已升级给值班负责人");
+  await loadGovernance();
+}
+
+async function importPublicDataset(button) {
+  const original = button.textContent;
+  button.disabled = true;
+  button.textContent = "正在获取并测试…";
+  try {
+    const result = await api(`/api/public-datasets/${encodeURIComponent(button.dataset.datasetId)}/import-sample`, { method: "POST", body: "{}" });
+    if (result.status === "requires_runtime" || result.status === "requires_manual_import") {
+      showToast(result.message);
+    } else {
+      showToast(`公开样本测试完成：读取 ${result.record_count} 条，形成 ${result.alert_count} 条治理告警${result.error_count ? `，${result.error_count} 条错误` : ""}`, result.status !== "completed");
+    }
+    await loadGovernance();
+    await loadIncidents();
+  } finally {
+    button.disabled = false;
+    button.textContent = original;
+  }
+}
+
 async function closeCamera() {
   await window.IDCAIDeviceScan?.stopScan();
   closeDialog(cameraDialog);
@@ -1688,6 +2004,14 @@ document.addEventListener("click", (event) => {
   }
   if (action === "open-admin") openAdmin();
   if (action === "open-lab") openLab();
+  if (action === "open-governance") openGovernance();
+  if (action === "refresh-governance") loadGovernance().then(() => showToast("治理结果已刷新")).catch((error) => showToast(error.message, true));
+  if (action === "acknowledge-production-alert") acknowledgeProductionAlert(event.target.closest("[data-action]")).catch((error) => showToast(error.message, true));
+  if (action === "resolve-identity-conflict") resolveIdentityConflict(event.target.closest("[data-action]")).catch((error) => showToast(error.message, true));
+  if (action === "acknowledge-assignment") updateAssignment(event.target.closest("[data-action]"), "acknowledge").catch((error) => showToast(error.message, true));
+  if (action === "defer-assignment") updateAssignment(event.target.closest("[data-action]"), "defer").catch((error) => showToast(error.message, true));
+  if (action === "escalate-assignment") updateAssignment(event.target.closest("[data-action]"), "escalate").catch((error) => showToast(error.message, true));
+  if (action === "import-public-dataset") importPublicDataset(event.target.closest("[data-action]")).catch((error) => showToast(`公开样本测试失败：${error.message}`, true));
   if (action === "open-operations") openOperations().catch((error) => showToast(error.message, true));
   if (action === "refresh-lab") loadLab().catch((error) => showToast(error.message, true));
   if (action === "set-platform-state") setLabPlatformState(event.target.closest("[data-action]")).catch((error) => showToast(error.message, true));
@@ -1744,6 +2068,9 @@ document.addEventListener("click", (event) => {
   const labTab = event.target.closest("[data-lab-tab]")?.dataset.labTab;
   if (labTab) activateLabTab(labTab);
 
+  const governanceTab = event.target.closest("[data-governance-tab]")?.dataset.governanceTab;
+  if (governanceTab) activateGovernanceTab(governanceTab);
+
   const agentRunButton = event.target.closest("[data-agent-run-id]");
   if (agentRunButton) selectAgentRun(agentRunButton.dataset.agentRunId).catch((error) => showToast(error.message, true));
 
@@ -1764,6 +2091,12 @@ document.addEventListener("click", (event) => {
 });
 
 document.addEventListener("submit", (event) => {
+  const governanceForm = event.target.closest("#productionAlertForm, #maintenanceWindowForm, #sourceHealthForm, #identityAssertionForm, #changeEventForm, #rosterForm, #assignmentForm, #correlationFeedbackForm");
+  if (governanceForm) {
+    event.preventDefault();
+    submitGovernanceForm(governanceForm).catch((error) => showToast(error.message, true));
+    return;
+  }
   const annotationForm = event.target.closest(".annotation-form");
   if (annotationForm) {
     event.preventDefault();
@@ -1827,6 +2160,7 @@ document.querySelector("#userIdentity").addEventListener("change", (event) => {
     renderOperationSession();
     if (state.selectedOperation) renderOperationDetail(state.selectedOperation);
   }
+  if (governanceDialog.open) loadGovernance().catch((error) => showToast(error.message, true));
 });
 document.querySelector("#knowledgeSearch").addEventListener("input", renderKnowledgeList);
 document.querySelector("#recordSearch").addEventListener("keydown", (event) => {
@@ -1888,7 +2222,7 @@ document.querySelector("#publishConfirmForm").addEventListener("submit", (event)
   publishRelease(releaseId).catch((error) => showToast(error.message, true));
 });
 
-for (const dialog of [ingestDialog, demoDialog, sourceDialog, facilityDialog, adminDialog, publishConfirmDialog, operationDialog, labDialog]) {
+for (const dialog of [ingestDialog, demoDialog, sourceDialog, facilityDialog, adminDialog, publishConfirmDialog, operationDialog, labDialog, governanceDialog]) {
   dialog.addEventListener("click", (event) => {
     if (event.target === dialog) closeDialog(dialog);
   });

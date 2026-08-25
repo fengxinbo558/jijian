@@ -18,6 +18,9 @@ from .auth import (
     can_import_work_order,
     can_operate_onsite,
     can_review_operation,
+    can_manage_incident_governance,
+    can_manage_maintenance,
+    can_manage_trust_data,
     is_ai_admin,
     is_super_admin,
     normalize_role,
@@ -26,6 +29,7 @@ from .demo_cases import DEMO_CASES, list_demos
 from .lab import PlatformUnavailable
 from .service import IncidentService
 from .store import IncidentStore
+from .views import project_production_alert, project_public_dataset
 
 
 LOG = logging.getLogger("idcops")
@@ -168,6 +172,105 @@ class RequestHandler(BaseHTTPRequestHandler):
                     HTTPStatus.OK,
                     {"items": self.app.service.source_statuses(check_external=check_external)},
                 )
+            elif path == "/api/production/overview":
+                self._json(HTTPStatus.OK, self.app.service.production.overview())
+            elif path == "/api/production/alerts":
+                query = parse_qs(parsed_url.query)
+                lifecycle_status = query.get("status", [""])[0]
+                limit = int(query.get("limit", ["200"])[0])
+                self._json(
+                    HTTPStatus.OK,
+                    {
+                        "items": [
+                            project_production_alert(item, self._role())
+                            for item in self.app.service.production.list_alerts(
+                                lifecycle_status, limit
+                            )
+                        ]
+                    },
+                )
+            elif path == "/api/production/maintenance":
+                self._json(
+                    HTTPStatus.OK,
+                    {"items": self.app.service.production.list_maintenance_windows()},
+                )
+            elif path == "/api/production/source-health":
+                self._require_permission(can_manage_trust_data(self._role()), "当前角色不能查看采集链路配置")
+                self._json(
+                    HTTPStatus.OK,
+                    {"items": self.app.service.production.list_source_health()},
+                )
+            elif path == "/api/production/identities":
+                self._require_permission(can_manage_trust_data(self._role()), "当前角色不能查看身份权威数据")
+                query = parse_qs(parsed_url.query)
+                self._json(
+                    HTTPStatus.OK,
+                    {
+                        "items": self.app.service.production.list_identity_assertions(
+                            query.get("entity_key", [""])[0]
+                        )
+                    },
+                )
+            elif path == "/api/production/identity-conflicts":
+                query = parse_qs(parsed_url.query)
+                self._json(
+                    HTTPStatus.OK,
+                    {
+                        "items": self.app.service.production.list_identity_conflicts(
+                            query.get("status", [""])[0],
+                            query.get("entity_key", [""])[0],
+                        )
+                    },
+                )
+            elif path == "/api/production/changes":
+                query = parse_qs(parsed_url.query)
+                self._json(
+                    HTTPStatus.OK,
+                    {
+                        "items": self.app.service.production.list_changes(
+                            query.get("site", [""])[0],
+                            query.get("entity_key", [""])[0],
+                            int(query.get("limit", ["200"])[0]),
+                        )
+                    },
+                )
+            elif path == "/api/production/rosters":
+                query = parse_qs(parsed_url.query)
+                active_only = query.get("active", ["0"])[0] in {"1", "true", "yes"}
+                self._json(
+                    HTTPStatus.OK,
+                    {"items": self.app.service.production.list_rosters(active_only)},
+                )
+            elif path == "/api/production/assignments":
+                self._json(
+                    HTTPStatus.OK,
+                    {"items": self.app.service.production.list_assignments()},
+                )
+            elif path == "/api/production/feedback":
+                self._require_permission(can_manage_incident_governance(self._role()), "当前角色不能查看关联纠正记录")
+                self._json(
+                    HTTPStatus.OK,
+                    {"items": self.app.service.production.list_feedback()},
+                )
+            elif path == "/api/production/metrics":
+                self._require_permission(can_manage_trust_data(self._role()), "当前角色不能查看全局调查指标")
+                self._json(HTTPStatus.OK, self.app.service.production.metrics())
+            elif path == "/api/public-datasets":
+                self._json(
+                    HTTPStatus.OK,
+                    {
+                        "items": [
+                            project_public_dataset(item, self._role())
+                            for item in self.app.service.public_datasets.list_datasets()
+                        ]
+                    },
+                )
+            elif path == "/api/public-datasets/imports":
+                self._require_permission(can_manage_trust_data(self._role()), "当前角色不能查看公开数据导入记录")
+                self._json(
+                    HTTPStatus.OK,
+                    {"items": self.app.service.public_datasets.list_imports()},
+                )
             elif path == "/api/operations":
                 self._json(HTTPStatus.OK, {"items": self.app.service.operations.list()})
             elif path.startswith("/api/operations/"):
@@ -305,6 +408,119 @@ class RequestHandler(BaseHTTPRequestHandler):
                 self._json(
                     HTTPStatus.CREATED,
                     self.app.service.operations.import_work_order(payload, self._actor()),
+                )
+            elif path == "/api/production/alerts":
+                self._require_permission(can_manage_incident_governance(self._role()), "当前角色不能写入生产告警")
+                result = self.app.service.production.ingest_alert(payload)
+                result["alert"] = project_production_alert(result["alert"], self._role())
+                self._json(
+                    HTTPStatus.OK if result.get("duplicate") else HTTPStatus.CREATED,
+                    result,
+                )
+            elif len(parts) == 5 and parts[:3] == ["api", "production", "alerts"] and parts[4] == "acknowledge":
+                self._require_permission(can_manage_incident_governance(self._role()), "当前角色不能确认生产告警")
+                self._json(
+                    HTTPStatus.OK,
+                    project_production_alert(
+                        self.app.service.production.acknowledge_alert(parts[3], self._actor()),
+                        self._role(),
+                    ),
+                )
+            elif path == "/api/production/maintenance":
+                self._require_permission(can_manage_maintenance(self._role()), "当前角色不能创建维护窗口")
+                self._json(
+                    HTTPStatus.CREATED,
+                    self.app.service.production.create_maintenance_window(payload, self._actor()),
+                )
+            elif path == "/api/production/source-health":
+                self._require_permission(can_manage_trust_data(self._role()), "当前角色不能修改采集链路状态")
+                self._json(
+                    HTTPStatus.OK,
+                    self.app.service.production.update_source_health(payload),
+                )
+            elif path == "/api/production/identities":
+                self._require_permission(can_manage_trust_data(self._role()), "当前角色不能写入身份权威数据")
+                self._json(
+                    HTTPStatus.CREATED,
+                    self.app.service.production.record_identity_assertion(payload, self._actor()),
+                )
+            elif len(parts) == 5 and parts[:3] == ["api", "production", "identity-conflicts"] and parts[4] == "resolve":
+                self._require_permission(can_manage_trust_data(self._role()), "当前角色不能处理身份冲突")
+                self._json(
+                    HTTPStatus.OK,
+                    self.app.service.production.resolve_identity_conflict(
+                        parts[3], str(payload.get("resolution") or ""), self._actor()
+                    ),
+                )
+            elif path == "/api/production/changes":
+                self._require_permission(can_manage_incident_governance(self._role()), "当前角色不能写入变更记录")
+                self._json(
+                    HTTPStatus.CREATED,
+                    self.app.service.production.record_change(payload, self._actor()),
+                )
+            elif path == "/api/production/rosters":
+                self._require_permission(can_manage_maintenance(self._role()), "当前角色不能维护值班表")
+                self._json(
+                    HTTPStatus.CREATED,
+                    self.app.service.production.create_roster(payload, self._actor()),
+                )
+            elif path == "/api/production/assignments":
+                self._require_permission(can_manage_incident_governance(self._role()), "当前角色不能分派事故")
+                self._json(
+                    HTTPStatus.CREATED,
+                    self.app.service.production.assign_incident(payload, self._actor()),
+                )
+            elif len(parts) == 5 and parts[:3] == ["api", "production", "assignments"] and parts[4] == "acknowledge":
+                self._require_permission(can_review_operation(self._role()), "当前角色不能确认事故分派")
+                self._require_assignee_or_admin(parts[3])
+                self._json(
+                    HTTPStatus.OK,
+                    self.app.service.production.acknowledge_assignment(parts[3], self._actor()),
+                )
+            elif len(parts) == 5 and parts[:3] == ["api", "production", "assignments"] and parts[4] == "defer":
+                self._require_permission(can_review_operation(self._role()), "当前角色不能延后事故分派")
+                self._require_assignee_or_admin(parts[3])
+                self._json(
+                    HTTPStatus.OK,
+                    self.app.service.production.defer_assignment(
+                        parts[3], str(payload.get("reason") or ""), self._actor()
+                    ),
+                )
+            elif len(parts) == 5 and parts[:3] == ["api", "production", "assignments"] and parts[4] == "escalate":
+                self._require_permission(can_manage_maintenance(self._role()), "当前角色不能升级事故")
+                self._json(
+                    HTTPStatus.OK,
+                    self.app.service.production.escalate_assignment(
+                        parts[3], str(payload.get("escalated_to") or ""), self._actor()
+                    ),
+                )
+            elif path == "/api/production/feedback":
+                self._require_permission(can_manage_incident_governance(self._role()), "当前角色不能纠正事故关联")
+                self._json(
+                    HTTPStatus.CREATED,
+                    self.app.service.production.record_feedback(payload, self._actor()),
+                )
+            elif path == "/api/production/metrics":
+                self._require_permission(can_manage_trust_data(self._role()), "当前角色不能写入调查指标")
+                self._json(
+                    HTTPStatus.CREATED,
+                    self.app.service.production.record_metric(
+                        str(payload.get("incident_id") or ""),
+                        str(payload.get("metric_name") or ""),
+                        float(payload.get("metric_value") or 0),
+                        payload.get("dimensions", {}) if isinstance(payload.get("dimensions"), dict) else {},
+                    ),
+                )
+            elif len(parts) == 4 and parts[:2] == ["api", "public-datasets"] and parts[3] == "import-sample":
+                self._require_permission(can_manage_trust_data(self._role()), "当前角色不能导入公开测试数据")
+                sample_text = payload.get("sample_text")
+                if sample_text is not None and not isinstance(sample_text, str):
+                    raise ValueError("sample_text 必须是文本")
+                self._json(
+                    HTTPStatus.CREATED,
+                    self.app.service.public_datasets.import_sample(
+                        parts[2], self._actor(), sample_text=sample_text
+                    ),
                 )
             elif path == "/api/lab/events":
                 self._require_admin()
@@ -505,6 +721,22 @@ class RequestHandler(BaseHTTPRequestHandler):
     def _require_super_admin(self) -> None:
         if not is_super_admin(self._role()):
             raise APIError(HTTPStatus.FORBIDDEN, "仅最高管理员可突破性查看原始记录")
+
+    def _require_assignee_or_admin(self, assignment_id: str) -> None:
+        if is_ai_admin(self._role()):
+            return
+        assignment = next(
+            (
+                item
+                for item in self.app.service.production.list_assignments()
+                if item.get("id") == assignment_id
+            ),
+            None,
+        )
+        if assignment is None:
+            raise APIError(HTTPStatus.NOT_FOUND, "事故分派不存在")
+        if assignment.get("assignee") != self._actor():
+            raise APIError(HTTPStatus.FORBIDDEN, "只有被分派人本人可以确认或延后；管理员代操作会单独审计")
 
     @staticmethod
     def _require_permission(allowed: bool, message: str) -> None:
