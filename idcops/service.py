@@ -14,6 +14,7 @@ from .agent_trace import AgentTraceRecorder
 from .assets import AssetRegistry
 from .backups import BackupService
 from .admin import AdminService
+from .drills import DrillService
 from .facility import assess_facility_event, strongest_assessment
 from .investigation import apply_model_enrichment, build_investigation, merge_investigations
 from .integrations import IntegrationHub
@@ -164,6 +165,88 @@ class IncidentService:
         self.integrations = integrations or IntegrationHub()
         self.production = ProductionGovernance(store, self.ingest)
         self.public_datasets = PublicDatasetService(store, self.production)
+        self.drills = DrillService(
+            store,
+            self.ingest_governed_platform_event,
+            analysis_mode="ai_enriched" if self.ai.enabled else "rules_only",
+        )
+
+    def ingest_governed_platform_event(
+        self, payload: Mapping[str, Any]
+    ) -> Dict[str, Any]:
+        """Send one simulated platform event through lab validation and alert governance."""
+
+        prepared = self.lab.prepare_event(payload)
+        if prepared["duplicate"]:
+            event = prepared["event"]
+            incident = (
+                self.get_incident(event.get("incident_id", ""))
+                if event.get("incident_id")
+                else None
+            )
+            return {
+                "accepted": bool(incident),
+                "duplicate": True,
+                "event": event,
+                "incident": incident,
+                "governance": None,
+            }
+        event = prepared["event"]
+        normalized = prepared["normalized"]
+        entity = dict(normalized.get("entity") or {})
+        incident_key = str(
+            normalized.get("explicit_incident_key")
+            or (prepared.get("correlation") or {}).get("incident_key")
+            or ""
+        )
+        governance_payload = {
+            "source_system": normalized["platform_key"],
+            "source_event_id": normalized["source_event_id"],
+            "occurred_at": normalized["occurred_at"],
+            "site": normalized["site"],
+            "entity": {
+                "sn": entity.get("sn"),
+                "device_name": entity.get("name"),
+                "ip": entity.get("ip"),
+                "rack_position": entity.get("rack_position"),
+                "interface": entity.get("interface"),
+                "asset_id": entity.get("asset_id"),
+                "device_type": entity.get("device_type"),
+            },
+            "signal_type": normalized["signal_type"],
+            "severity": normalized["severity"],
+            "summary": normalized["summary"],
+            "raw_payload": normalized.get("raw_payload") or {},
+            "incident_key": incident_key,
+            "lifecycle_status": str(payload.get("lifecycle_status") or "firing"),
+            "simulation": True,
+            "is_demo": True,
+            "demo_id": str(payload.get("scenario_id") or "governed-platform-lab"),
+            "drill_run_id": str(payload.get("drill_run_id") or ""),
+        }
+        try:
+            governance = self.production.ingest_alert(governance_payload)
+            alert = governance.get("alert") or {}
+            incident = governance.get("incident")
+            if incident is None and alert.get("incident_id"):
+                incident = self.get_incident(str(alert["incident_id"]))
+            incident_id = str((incident or {}).get("id") or alert.get("incident_id") or "")
+            completed = self.lab.complete_event(
+                event["id"],
+                incident_id,
+                incident_key,
+                prepared.get("correlation") or {},
+            )
+        except Exception as exc:
+            self.lab.fail_event(event["id"], str(exc))
+            raise
+        return {
+            "accepted": True,
+            "duplicate": False,
+            "event": completed,
+            "incident": incident,
+            "governance": governance,
+        }
 
     def ingest_platform_event(self, payload: Mapping[str, Any]) -> Dict[str, Any]:
         """Accept one simulated platform event through the production-shaped boundary."""

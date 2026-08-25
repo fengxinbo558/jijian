@@ -21,6 +21,7 @@ from .auth import (
     can_manage_incident_governance,
     can_manage_maintenance,
     can_manage_trust_data,
+    can_manage_drills,
     is_ai_admin,
     is_super_admin,
     normalize_role,
@@ -296,6 +297,28 @@ class RequestHandler(BaseHTTPRequestHandler):
             elif path == "/api/lab/scenarios":
                 self._require_admin()
                 self._json(HTTPStatus.OK, {"items": self.app.service.list_lab_scenarios()})
+            elif path == "/api/drills/catalog":
+                self._require_permission(can_manage_drills(self._role()), "当前角色不能查看故障演练库")
+                query = parse_qs(parsed_url.query)
+                self._json(
+                    HTTPStatus.OK,
+                    self.app.service.drills.list_catalog(query.get("category", [""])[0]),
+                )
+            elif path == "/api/drills/runs":
+                self._require_permission(can_manage_drills(self._role()), "当前角色不能查看故障演练")
+                query = parse_qs(parsed_url.query)
+                self._json(
+                    HTTPStatus.OK,
+                    {"items": self.app.service.drills.list_runs(int(query.get("limit", ["100"])[0]))},
+                )
+            elif path.startswith("/api/drills/runs/"):
+                self._require_permission(can_manage_drills(self._role()), "当前角色不能查看故障演练")
+                run_id = unquote(path.removeprefix("/api/drills/runs/"))
+                query = parse_qs(parsed_url.query)
+                reveal = query.get("reveal", ["0"])[0] in {"1", "true", "yes"}
+                if reveal:
+                    self._require_drill_reveal(run_id)
+                self._json(HTTPStatus.OK, self.app.service.drills.get(run_id, reveal=reveal))
             elif path == "/api/agent/runs":
                 self._require_admin()
                 query = parse_qs(parsed_url.query)
@@ -553,6 +576,39 @@ class RequestHandler(BaseHTTPRequestHandler):
                     str(payload.get("last_error") or ""),
                 )
                 self._json(HTTPStatus.OK, result)
+            elif path == "/api/drills/runs":
+                self._require_permission(can_manage_drills(self._role()), "当前角色不能启动故障演练")
+                self._json(
+                    HTTPStatus.CREATED,
+                    self.app.service.drills.start(payload, self._actor(), self._role()),
+                )
+            elif len(parts) == 5 and parts[:3] == ["api", "drills", "runs"] and parts[4] == "advance":
+                self._require_permission(can_manage_drills(self._role()), "当前角色不能推进故障演练")
+                self._json(
+                    HTTPStatus.OK,
+                    self.app.service.drills.advance(
+                        parts[3], str(payload.get("command") or "step"), self._actor()
+                    ),
+                )
+            elif len(parts) == 5 and parts[:3] == ["api", "drills", "runs"] and parts[4] == "feedback":
+                self._require_permission(can_manage_drills(self._role()), "当前角色不能提交演练反馈")
+                self._json(
+                    HTTPStatus.OK,
+                    self.app.service.drills.feedback(
+                        parts[3],
+                        str(payload.get("action_id") or ""),
+                        str(payload.get("notes") or ""),
+                        self._actor(),
+                    ),
+                )
+            elif len(parts) == 5 and parts[:3] == ["api", "drills", "runs"] and parts[4] == "terminate":
+                self._require_permission(can_manage_drills(self._role()), "当前角色不能终止故障演练")
+                self._json(
+                    HTTPStatus.OK,
+                    self.app.service.drills.terminate(
+                        parts[3], str(payload.get("reason") or ""), self._actor()
+                    ),
+                )
             elif len(parts) == 4 and parts[:2] == ["api", "operations"] and parts[3] == "identity":
                 self._require_permission(can_operate_onsite(self._role()), "当前角色不能执行现场身份核对")
                 self._json(
@@ -737,6 +793,13 @@ class RequestHandler(BaseHTTPRequestHandler):
             raise APIError(HTTPStatus.NOT_FOUND, "事故分派不存在")
         if assignment.get("assignee") != self._actor():
             raise APIError(HTTPStatus.FORBIDDEN, "只有被分派人本人可以确认或延后；管理员代操作会单独审计")
+
+    def _require_drill_reveal(self, run_id: str) -> None:
+        run = self.app.service.drills.get(run_id, reveal=False)
+        if is_super_admin(self._role()):
+            return
+        if run.get("started_by") != self._actor():
+            raise APIError(HTTPStatus.FORBIDDEN, "只有本次演练发起人或最高管理员可在结束后揭示答案")
 
     @staticmethod
     def _require_permission(allowed: bool, message: str) -> None:

@@ -104,12 +104,15 @@ class ProductionGovernance:
 
     @staticmethod
     def _fingerprint(payload: Mapping[str, Any], resolved_entity_key: str) -> str:
-        parts = (
+        parts = [
             _text(payload.get("source_system") or "unknown"),
             _text(payload.get("site")).upper(),
             resolved_entity_key,
             _text(payload.get("signal_type") or "unknown").lower(),
-        )
+        ]
+        drill_run_id = _text(payload.get("drill_run_id"))
+        if drill_run_id and bool(payload.get("is_demo") or payload.get("simulation")):
+            parts.append(drill_run_id)
         return hashlib.sha256("|".join(parts).encode("utf-8")).hexdigest()
 
     @staticmethod
@@ -516,10 +519,16 @@ class ProductionGovernance:
             "event_time": _text(payload.get("occurred_at") or payload.get("event_time")),
             "source_system": _text(payload.get("source_system")),
             "incident_key": _text(payload.get("incident_key")),
+            "is_demo": bool(payload.get("is_demo") or payload.get("simulation")),
+            "demo_id": _text(payload.get("demo_id")),
             "labels": {
                 "governed_alert": True,
                 "entity_key": resolved_entity,
                 "signal_type": _text(payload.get("signal_type")),
+                "drill_run_id": _text(payload.get("drill_run_id")),
+                "platform_simulation": bool(
+                    payload.get("is_demo") or payload.get("simulation")
+                ),
             },
         }
 

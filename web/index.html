@@ -39,6 +39,10 @@
           <span class="rail-icon" aria-hidden="true">房</span>
           <span>机房等级</span>
         </button>
+        <button class="rail-button" id="drillRailButton" data-action="open-drills" type="button">
+          <span class="rail-icon" aria-hidden="true">演</span>
+          <span>故障演练</span>
+        </button>
         <button class="rail-button" id="labRailButton" data-action="open-lab" type="button">
           <span class="rail-icon" aria-hidden="true">联</span>
           <span>接入实验室</span>
@@ -274,6 +278,126 @@
       </header>
       <p class="dialog-intro">这里全部是系统生成的测试数据，用来体验分析流程，不代表任何真实设备状态。</p>
       <div class="demo-grid" id="demoGrid"></div>
+    </div>
+  </dialog>
+
+  <dialog class="work-dialog drill-dialog" id="drillDialog" aria-labelledby="drillTitle">
+    <div class="dialog-frame drill-frame">
+      <header class="dialog-header drill-header">
+        <div>
+          <p class="eyebrow">FAULT DRILL FLIGHT RECORDER</p>
+          <h2 id="drillTitle">故障演练台</h2>
+          <p>从平台信号开始，经过统一接入、治理和事故关联，再停在需要人工负责的节点。演练数据与生产数据严格标记隔离。</p>
+        </div>
+        <button class="icon-button" data-close-dialog type="button" aria-label="关闭故障演练台">×</button>
+      </header>
+
+      <section class="drill-trust-strip" aria-label="演练可信边界">
+        <article><small>01 答案隔离</small><strong>盲测运行中不可读取</strong><span>结束后才允许发起人或最高管理员揭晓</span></article>
+        <article><small>02 接入一致</small><strong>经过平台接入与治理链</strong><span>不是在页面直接写一个“故障结果”</span></article>
+        <article><small>03 人工责任</small><strong>危险动作不会自动执行</strong><span>AI 给证据与建议，人负责确认和反馈</span></article>
+      </section>
+
+      <div class="drill-shell">
+        <aside class="drill-library" aria-labelledby="drillLibraryTitle">
+          <div class="drill-section-heading">
+            <div><p class="eyebrow">FAULT LIBRARY</p><h3 id="drillLibraryTitle">选择要触发的故障</h3></div>
+            <span id="drillCatalogCount" class="drill-count">0 项</span>
+          </div>
+          <form id="drillStartForm" class="drill-start-form">
+            <fieldset>
+              <legend>演练方式</legend>
+              <label><input name="mode" type="radio" value="directed" checked> 定向演练 <span>知道题目，适合演示</span></label>
+              <label><input name="mode" type="radio" value="blind"> 盲测 <span>只看现象，不看答案</span></label>
+            </fieldset>
+            <label>故障分类
+              <select id="drillCategorySelect" name="category"></select>
+            </label>
+            <label id="drillScenarioField">具体场景
+              <select id="drillScenarioSelect" name="scenario_id" required></select>
+            </label>
+            <label>推进方式
+              <select name="playback_mode">
+                <option value="auto">自动走到人工节点</option>
+                <option value="step">每次只走一步</option>
+                <option value="next_human">跳到下一个人工节点</option>
+              </select>
+            </label>
+            <p class="drill-form-note" id="drillModeNote">定向演练会显示故障名称；运行过程仍由真实模拟信号触发。</p>
+            <button class="primary-button" type="submit">触发这次演练</button>
+          </form>
+          <div class="drill-catalog-list" id="drillCatalogList" aria-live="polite"></div>
+          <section class="drill-history" aria-labelledby="drillHistoryTitle">
+            <header><h3 id="drillHistoryTitle">最近演练</h3><button class="text-button" data-action="refresh-drills" type="button">刷新</button></header>
+            <div id="drillRunList"></div>
+          </section>
+        </aside>
+
+        <main class="drill-console" aria-live="polite">
+          <section class="drill-empty" id="drillEmptyState">
+            <div class="drill-empty-pulse" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
+            <p class="eyebrow">READY FOR INJECTION</p>
+            <h3>先从左侧触发一个故障</h3>
+            <p>系统会逐条生成平台信号，并把每次接收、治理、关联、人工检查和恢复验证记录到这里。</p>
+          </section>
+
+          <div id="drillActive" hidden>
+            <header class="drill-run-header">
+              <div>
+                <div class="drill-run-meta"><span id="drillRunMode">—</span><span id="drillRunStatus">—</span><span id="drillAnalysisMode">—</span></div>
+                <h3 id="drillRunName">—</h3>
+                <p id="drillRunSymptom">—</p>
+              </div>
+              <div class="drill-run-controls">
+                <button class="secondary-button" data-action="drill-step" type="button">推进一步</button>
+                <button class="secondary-button" data-action="drill-next-human" type="button">走到人工节点</button>
+                <button class="danger-button" data-action="terminate-drill" type="button">终止演练</button>
+              </div>
+            </header>
+
+            <section class="drill-overview-grid">
+              <article class="physical-locator" aria-labelledby="drillLocatorTitle">
+                <p class="eyebrow">PHYSICAL LOCATOR</p><h3 id="drillLocatorTitle">物理定位卡</h3>
+                <dl id="drillLocation"></dl>
+                <p>这些身份来自场景/资产字段，不由大模型猜测。</p>
+              </article>
+              <article class="impact-card" aria-labelledby="drillImpactTitle">
+                <p class="eyebrow">CURRENT IMPACT PATH</p><h3 id="drillImpactTitle">当前影响路径</h3>
+                <div class="impact-path" id="drillImpactPath"></div>
+                <p id="drillImpactKind">—</p>
+              </article>
+            </section>
+
+            <section class="drill-flight-recorder" aria-labelledby="drillTimelineTitle">
+              <header>
+                <div><p class="eyebrow">AUDITABLE SIGNAL CHAIN</p><h3 id="drillTimelineTitle">系统如何一步步得到结果</h3></div>
+                <div><span id="drillLogicalTime">T+0s</span><span id="drillIncidentCount">0 个事故</span></div>
+              </header>
+              <ol class="drill-timeline" id="drillStepList"></ol>
+            </section>
+
+            <section class="drill-checkpoint" id="drillCheckpoint" hidden aria-labelledby="drillCheckpointTitle">
+              <div>
+                <p class="eyebrow">HUMAN RESPONSIBILITY POINT</p>
+                <h3 id="drillCheckpointTitle">等待人工确认</h3>
+                <p id="drillCheckpointPrompt"></p>
+              </div>
+              <form id="drillFeedbackForm">
+                <fieldset id="drillActionChoices"><legend>选择实际执行结果</legend></fieldset>
+                <label>现场或接口人备注（可选）<textarea name="notes" rows="3" placeholder="记录实际观察、测量值、许可情况或无法执行的原因"></textarea></label>
+                <button class="primary-button" type="submit">提交反馈并继续</button>
+              </form>
+            </section>
+
+            <section class="drill-result" id="drillResult" hidden aria-labelledby="drillResultTitle">
+              <div><p class="eyebrow">DRILL RESULT</p><h3 id="drillResultTitle">演练结果</h3><p id="drillResultSummary"></p></div>
+              <dl id="drillScore"></dl>
+              <button class="secondary-button" data-action="reveal-drill-answer" type="button">揭晓隐藏答案</button>
+              <article id="drillTruth" hidden></article>
+            </section>
+          </div>
+        </main>
+      </div>
     </div>
   </dialog>
 

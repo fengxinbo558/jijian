@@ -708,6 +708,56 @@ class IncidentStore:
                 );
                 CREATE INDEX IF NOT EXISTS idx_public_dataset_imports_dataset
                     ON public_dataset_imports(dataset_id, created_at DESC);
+
+                CREATE TABLE IF NOT EXISTS drill_runs (
+                    id TEXT PRIMARY KEY,
+                    mode TEXT NOT NULL,
+                    category TEXT NOT NULL,
+                    display_name TEXT NOT NULL,
+                    catalog_version TEXT NOT NULL,
+                    playback_mode TEXT NOT NULL,
+                    analysis_mode TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    current_step_id TEXT NOT NULL,
+                    logical_time INTEGER NOT NULL,
+                    incident_ids_json TEXT NOT NULL,
+                    location_json TEXT NOT NULL,
+                    impact_path_json TEXT NOT NULL,
+                    final_diagnosis TEXT NOT NULL,
+                    final_status TEXT NOT NULL,
+                    score_json TEXT NOT NULL,
+                    started_by TEXT NOT NULL,
+                    started_role TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    completed_at TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_drill_runs_created
+                    ON drill_runs(created_at DESC);
+
+                CREATE TABLE IF NOT EXISTS drill_run_secrets (
+                    run_id TEXT PRIMARY KEY,
+                    scenario_id TEXT NOT NULL,
+                    truth_json TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    FOREIGN KEY(run_id) REFERENCES drill_runs(id)
+                );
+
+                CREATE TABLE IF NOT EXISTS drill_steps (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    run_id TEXT NOT NULL,
+                    step_id TEXT NOT NULL,
+                    step_type TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    actor TEXT NOT NULL,
+                    summary TEXT NOT NULL,
+                    details_json TEXT NOT NULL,
+                    incident_id TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    FOREIGN KEY(run_id) REFERENCES drill_runs(id)
+                );
+                CREATE INDEX IF NOT EXISTS idx_drill_steps_run
+                    ON drill_steps(run_id, id);
                 """
             )
             columns = {
@@ -729,6 +779,13 @@ class IncidentStore:
                 """
                 INSERT OR IGNORE INTO schema_migrations (version, name, applied_at)
                 VALUES (4, 'minimum_production_loop', ?)
+                """,
+                (utc_now(),),
+            )
+            connection.execute(
+                """
+                INSERT OR IGNORE INTO schema_migrations (version, name, applied_at)
+                VALUES (5, 'interactive_fault_drills', ?)
                 """,
                 (utc_now(),),
             )

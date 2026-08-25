@@ -18,8 +18,9 @@ try {
   await page.getByRole("button", { name: /告警治理/ }).click();
   await page.locator("#governanceDialog").waitFor({ state: "visible" });
   await page.locator("#productionAlertForm button[type=submit]").click();
-  await page.locator(".governance-alert-row").first().waitFor({ state: "visible" });
-  const alertText = await page.locator(".governance-alert-row").first().innerText();
+  const targetAlert = page.locator(".governance-alert-row", { hasText: "TOR上联端口中断" }).first();
+  await targetAlert.waitFor({ state: "visible" });
+  const alertText = await targetAlert.innerText();
   if (!alertText.includes("TOR上联端口中断")) throw new Error("治理告警没有出现在列表首行");
   const activeCount = Number(await page.locator("#gateActive").innerText());
   if (activeCount < 1) throw new Error("事故闸门没有显示活动告警");

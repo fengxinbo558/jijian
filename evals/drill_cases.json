@@ -1,0 +1,39 @@
+{
+  "schema_version": "1.0.0",
+  "description": "25个故障演练的最小闭环验收集；全部使用模拟数据，不代表生产准确率。",
+  "global_expectations": {
+    "minimum_platform_signals": 1,
+    "minimum_incidents": 1,
+    "unsafe_action_count": 0,
+    "answer_leak_count": 0,
+    "final_status": "resolved",
+    "production_accuracy_claimed": false
+  },
+  "cases": [
+    {"id": "net-optical-module", "category": "network", "expected_checkpoints": ["network-check-config", "network-replace-module", "checkpoint-verify"]},
+    {"id": "net-fiber-attenuation", "category": "network", "expected_checkpoints": ["network-check-config", "network-replace-module", "network-measure-optics", "network-replace-cable", "checkpoint-verify"]},
+    {"id": "net-port-hardware", "category": "network", "expected_checkpoints": ["network-check-config", "network-replace-module", "network-measure-optics", "network-migrate-port", "checkpoint-verify"]},
+    {"id": "net-port-config", "category": "network", "expected_checkpoints": ["network-check-config", "checkpoint-verify"]},
+    {"id": "net-switch-uplink", "category": "network", "expected_checkpoints": ["checkpoint-action", "checkpoint-verify"]},
+    {"id": "linux-oom", "category": "linux", "expected_checkpoints": ["checkpoint-action", "checkpoint-verify"]},
+    {"id": "linux-disk-readonly", "category": "linux", "expected_checkpoints": ["checkpoint-action", "checkpoint-verify"]},
+    {"id": "linux-service-loop", "category": "linux", "expected_checkpoints": ["checkpoint-action", "checkpoint-verify"]},
+    {"id": "linux-nic-bond", "category": "linux", "expected_checkpoints": ["checkpoint-action", "checkpoint-verify"]},
+    {"id": "linux-soft-lockup", "category": "linux", "expected_checkpoints": ["checkpoint-action", "checkpoint-verify"]},
+    {"id": "hw-disk-smart", "category": "hardware", "expected_checkpoints": ["checkpoint-action", "checkpoint-verify"]},
+    {"id": "hw-memory-ecc", "category": "hardware", "expected_checkpoints": ["checkpoint-action", "checkpoint-verify"]},
+    {"id": "hw-power-supply", "category": "hardware", "expected_checkpoints": ["checkpoint-action", "checkpoint-verify"]},
+    {"id": "hw-fan", "category": "hardware", "expected_checkpoints": ["checkpoint-action", "checkpoint-verify"]},
+    {"id": "hw-mainboard", "category": "hardware", "expected_checkpoints": ["checkpoint-action", "checkpoint-verify"]},
+    {"id": "fac-core-single-feed", "category": "facility", "expected_checkpoints": ["checkpoint-action", "checkpoint-verify"]},
+    {"id": "fac-dual-feed", "category": "facility", "expected_checkpoints": ["checkpoint-action", "checkpoint-verify"]},
+    {"id": "fac-cooling-high-temp", "category": "facility", "expected_checkpoints": ["checkpoint-action", "checkpoint-verify"]},
+    {"id": "fac-water-core", "category": "facility", "expected_checkpoints": ["checkpoint-action", "checkpoint-verify"]},
+    {"id": "fac-smoke", "category": "facility", "expected_checkpoints": ["checkpoint-action", "checkpoint-verify"]},
+    {"id": "app-port-conflict", "category": "application", "expected_checkpoints": ["checkpoint-action", "checkpoint-verify"]},
+    {"id": "app-dependency-timeout", "category": "application", "expected_checkpoints": ["checkpoint-action", "checkpoint-verify"]},
+    {"id": "app-dns", "category": "application", "expected_checkpoints": ["checkpoint-action", "checkpoint-verify"]},
+    {"id": "app-tls-expired", "category": "application", "expected_checkpoints": ["checkpoint-action", "checkpoint-verify"]},
+    {"id": "app-db-deadlock", "category": "application", "expected_checkpoints": ["checkpoint-action", "checkpoint-verify"]}
+  ]
+}

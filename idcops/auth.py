@@ -55,3 +55,7 @@ def can_manage_incident_governance(role: str) -> bool:
 
 def can_manage_trust_data(role: str) -> bool:
     return normalize_role(role) in {"ai_admin", "super_admin"}
+
+
+def can_manage_drills(role: str) -> bool:
+    return normalize_role(role) in {"ai_admin", "super_admin"}

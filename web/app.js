@@ -20,6 +20,13 @@ const state = {
     selectedAgentRun: null,
     backups: [],
   },
+  drills: {
+    catalog: null,
+    category: "network",
+    selectedScenarioId: "net-optical-module",
+    runs: [],
+    active: null,
+  },
   governance: {
     tab: "alerts",
     overview: {},
@@ -91,6 +98,7 @@ const operationDialog = document.querySelector("#operationDialog");
 const cameraDialog = document.querySelector("#cameraDialog");
 const labDialog = document.querySelector("#labDialog");
 const governanceDialog = document.querySelector("#governanceDialog");
+const drillDialog = document.querySelector("#drillDialog");
 
 function escapeHtml(value) {
   return String(value ?? "")
@@ -848,17 +856,21 @@ function setRole(role, preserveActor = false) {
   document.querySelector("#userIdentity").value = state.actor;
   const adminButton = document.querySelector("#adminRailButton");
   const labButton = document.querySelector("#labRailButton");
+  const drillButton = document.querySelector("#drillRailButton");
   const isAdmin = ["ai_admin", "super_admin"].includes(state.role);
   adminButton.classList.toggle("is-locked", !isAdmin);
   adminButton.setAttribute("aria-description", isAdmin ? "打开数据与 AI 管理" : "仅 AI 管理员可以打开");
   labButton.classList.toggle("is-locked", !isAdmin);
   labButton.setAttribute("aria-description", isAdmin ? "打开接入实验室" : "仅 AI 管理员与最高管理员可以打开");
+  drillButton.hidden = !isAdmin;
+  drillButton.setAttribute("aria-description", "打开管理员故障演练台");
   document.querySelector("#breakGlassPanel").hidden = state.role !== "super_admin";
   applyGovernancePermissions();
   renderRoleBrief();
   showToast(`已切换到${roleNames[state.role]}工作台，当前账号 ${state.actor}`);
   if (state.incidents.length) loadIncidents(state.selectedId).catch((error) => showToast(error.message, true));
   if (governanceDialog.open) loadGovernance().catch((error) => showToast(error.message, true));
+  if (!isAdmin && drillDialog.open) closeDialog(drillDialog);
 }
 
 function adminSummaryCard(label, value, note) {
@@ -1607,6 +1619,270 @@ async function openLab() {
   }
 }
 
+const drillStatusNames = {
+  running: "系统推进中",
+  waiting_human: "等待人工反馈",
+  resolved: "已恢复并验证",
+  transferred: "已转专业组",
+  evidence_insufficient: "证据不足",
+  operation_blocked: "操作被阻断",
+  false_positive: "误报",
+  terminated: "人工终止",
+};
+
+const drillStepTypeNames = {
+  system: "演练控制",
+  platform_signal: "平台信号",
+  human_action: "人工反馈",
+};
+
+const drillLocationNames = {
+  site: "机房",
+  row: "排 / 区域",
+  rack: "机柜",
+  rack_position: "机架位",
+  device: "设备",
+  interface: "端口",
+};
+
+const drillImpactNames = {
+  business_network: "业务网络路径",
+  management_network: "带外管理路径",
+  application: "应用服务路径",
+  facility: "动环影响路径",
+  hardware: "服务器硬件路径",
+};
+
+function drillTerminal(run) {
+  return ["resolved", "transferred", "evidence_insufficient", "operation_blocked", "false_positive", "terminated"].includes(run?.status);
+}
+
+function drillCategoryName(id) {
+  return state.drills.catalog?.categories?.find((item) => item.id === id)?.name || id;
+}
+
+function renderDrillCatalog() {
+  const catalog = state.drills.catalog || { categories: [], items: [] };
+  const categorySelect = document.querySelector("#drillCategorySelect");
+  categorySelect.innerHTML = catalog.categories.map((item) => `<option value="${escapeHtml(item.id)}">${escapeHtml(item.name)}</option>`).join("");
+  if (!catalog.categories.some((item) => item.id === state.drills.category)) state.drills.category = catalog.categories[0]?.id || "network";
+  categorySelect.value = state.drills.category;
+  const items = catalog.items.filter((item) => item.category === state.drills.category);
+  if (!items.some((item) => item.id === state.drills.selectedScenarioId)) state.drills.selectedScenarioId = items[0]?.id || "";
+  const scenarioSelect = document.querySelector("#drillScenarioSelect");
+  scenarioSelect.innerHTML = items.map((item) => `<option value="${escapeHtml(item.id)}">${escapeHtml(item.name)}</option>`).join("");
+  scenarioSelect.value = state.drills.selectedScenarioId;
+  const blind = document.querySelector('#drillStartForm input[name="mode"]:checked')?.value === "blind";
+  document.querySelector("#drillCatalogCount").textContent = blind ? "随机抽取" : `${items.length} 项`;
+  const catalogList = document.querySelector("#drillCatalogList");
+  catalogList.hidden = blind;
+  catalogList.innerHTML = items.map((item) => `
+    <button class="drill-catalog-item ${item.id === state.drills.selectedScenarioId ? "is-selected" : ""}" data-drill-scenario-id="${escapeHtml(item.id)}" type="button">
+      <span class="drill-severity" data-severity="${escapeHtml(item.severity)}">${escapeHtml(item.severity === "critical" ? "严重" : "警告")}</span>
+      <strong>${escapeHtml(item.name)}</strong>
+      <small>${escapeHtml(item.visible_symptom)}</small>
+      <i>${escapeHtml(item.owner_team)} · ${item.needs_onsite ? "需要现场" : "可先远程"}</i>
+    </button>`).join("") || `<div class="admin-empty">这个分类下还没有演练场景。</div>`;
+}
+
+function renderDrillRuns() {
+  const target = document.querySelector("#drillRunList");
+  target.innerHTML = state.drills.runs.slice(0, 12).map((run) => `
+    <button class="drill-run-row ${run.id === state.drills.active?.id ? "is-selected" : ""}" data-drill-run-id="${escapeHtml(run.id)}" type="button">
+      <span><b>${escapeHtml(run.mode === "blind" ? "盲" : "定")}</b>${escapeHtml(drillCategoryName(run.category))}</span>
+      <strong>${escapeHtml(run.display_name)}</strong>
+      <small>${escapeHtml(drillStatusNames[run.status] || run.status)} · ${escapeHtml(formatTime(run.updated_at))}</small>
+    </button>`).join("") || `<div class="admin-empty">还没有演练记录。</div>`;
+}
+
+function drillDetailRows(details = {}) {
+  const preferred = [
+    ["source_system", "来源平台"], ["source_event_id", "来源事件"], ["signal_type", "信号类型"],
+    ["integration_event_id", "接入记录"], ["governance_decision", "治理结论"], ["alert_id", "告警记录"],
+    ["action_id", "人工动作"], ["simulated_observation", "模拟观察"], ["notes", "人工备注"],
+    ["analysis_mode", "分析模式"], ["responsibility_boundary", "责任边界"],
+  ];
+  return preferred.filter(([key]) => details[key] !== undefined && details[key] !== "").map(([key, label]) => {
+    const value = typeof details[key] === "object" ? JSON.stringify(details[key]) : details[key];
+    return `<div><dt>${escapeHtml(label)}</dt><dd>${escapeHtml(value === true ? "是" : value === false ? "否" : value)}</dd></div>`;
+  }).join("");
+}
+
+function renderDrillTimeline(run) {
+  const target = document.querySelector("#drillStepList");
+  target.innerHTML = (run.steps || []).map((step, index) => `
+    <li class="drill-step" data-step-type="${escapeHtml(step.step_type)}">
+      <span class="drill-step-index">${String(index + 1).padStart(2, "0")}</span>
+      <article>
+        <header><span>${escapeHtml(drillStepTypeNames[step.step_type] || step.step_type)}</span><time>${escapeHtml(formatTime(step.created_at))}</time></header>
+        <h4>${escapeHtml(step.summary)}</h4>
+        <dl>${drillDetailRows(step.details)}</dl>
+        ${step.incident_id ? `<p>关联事故 <button class="text-button" data-incident-id="${escapeHtml(step.incident_id)}" type="button">${escapeHtml(step.incident_id)}</button></p>` : ""}
+      </article>
+    </li>`).join("") || `<li class="drill-step-empty">尚未接收到演练信号。</li>`;
+  target.lastElementChild?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+}
+
+function renderDrillLocation(run) {
+  const entries = Object.entries(run.location || {}).filter(([, value]) => value);
+  document.querySelector("#drillLocation").innerHTML = entries.map(([key, value]) => `<div><dt>${escapeHtml(drillLocationNames[key] || key)}</dt><dd>${escapeHtml(value)}</dd></div>`).join("") || `<div><dt>位置</dt><dd>待资产系统补充</dd></div>`;
+  const impact = run.impact_path || {};
+  const nodes = impact.nodes || [];
+  document.querySelector("#drillImpactPath").innerHTML = nodes.map((node, index) => `${index ? `<i aria-hidden="true">→</i>` : ""}<div data-node-type="${escapeHtml(node.type)}"><small>${escapeHtml(node.type)}</small><strong>${escapeHtml(node.label)}</strong></div>`).join("") || `<span>当前场景没有登记影响路径</span>`;
+  document.querySelector("#drillImpactKind").textContent = `${drillImpactNames[impact.kind] || impact.kind || "影响路径待确认"}；只展示当前事故相关链路，不推测整座机房拓扑。`;
+}
+
+function renderDrillCheckpoint(run) {
+  const panel = document.querySelector("#drillCheckpoint");
+  const checkpoint = run.current_checkpoint;
+  panel.hidden = !checkpoint;
+  if (!checkpoint) return;
+  document.querySelector("#drillCheckpointTitle").textContent = checkpoint.title;
+  document.querySelector("#drillCheckpointPrompt").textContent = checkpoint.prompt;
+  document.querySelector("#drillActionChoices").innerHTML = `<legend>选择实际执行结果</legend>${(checkpoint.actions || []).map((action, index) => `<label><input name="action_id" type="radio" value="${escapeHtml(action.id)}" ${index === 0 ? "checked" : ""} required><span>${escapeHtml(action.label)}</span></label>`).join("")}`;
+}
+
+function renderDrillResult(run) {
+  const result = document.querySelector("#drillResult");
+  result.hidden = !drillTerminal(run);
+  if (!drillTerminal(run)) return;
+  document.querySelector("#drillResultSummary").textContent = `${drillStatusNames[run.status] || run.status}。这是模拟演练评分，不代表生产准确率。`;
+  const score = run.score || {};
+  document.querySelector("#drillScore").innerHTML = `
+    <div><dt>诊断是否命中</dt><dd>${score.diagnosis_match ? "命中" : "未命中/未完成"}</dd></div>
+    <div><dt>平台信号</dt><dd>${escapeHtml(score.platform_signal_count ?? 0)} 条</dd></div>
+    <div><dt>人工动作</dt><dd>${escapeHtml(score.human_action_count ?? 0)} 次</dd></div>
+    <div><dt>危险自动动作</dt><dd>${escapeHtml(score.unsafe_action_count ?? 0)} 次</dd></div>`;
+  const revealButton = result.querySelector('[data-action="reveal-drill-answer"]');
+  const canReveal = state.role === "super_admin" || run.started_by === state.actor;
+  revealButton.hidden = Boolean(run.hidden_truth);
+  revealButton.disabled = !run.truth_reveal_available || !canReveal;
+  revealButton.title = canReveal ? "结束后揭晓隐藏答案" : "只有本次发起人或最高管理员可以揭晓";
+  const truth = document.querySelector("#drillTruth");
+  truth.hidden = !run.hidden_truth;
+  if (run.hidden_truth) truth.innerHTML = `<small>隐藏答案</small><strong>${escapeHtml(run.hidden_truth.label || run.hidden_truth.diagnosis)}</strong><p>故障部件：${escapeHtml(run.hidden_truth.component || "未登记")} · 责任专业：${escapeHtml(run.hidden_truth.owner_team || "待确认")}</p>`;
+}
+
+function renderActiveDrill() {
+  const run = state.drills.active;
+  document.querySelector("#drillEmptyState").hidden = Boolean(run);
+  document.querySelector("#drillActive").hidden = !run;
+  if (!run) return;
+  document.querySelector("#drillRunMode").textContent = run.mode === "blind" ? "盲测" : "定向演练";
+  document.querySelector("#drillRunStatus").textContent = drillStatusNames[run.status] || run.status;
+  document.querySelector("#drillRunStatus").dataset.status = run.status;
+  document.querySelector("#drillAnalysisMode").textContent = run.analysis_mode === "ai_enriched" ? "AI 增强分析" : "规则基线（未接模型）";
+  document.querySelector("#drillRunName").textContent = run.scenario?.name || run.display_name;
+  document.querySelector("#drillRunSymptom").textContent = run.scenario?.visible_symptom || "等待信号";
+  document.querySelector("#drillLogicalTime").textContent = `T+${run.logical_time || 0}s`;
+  document.querySelector("#drillIncidentCount").textContent = `${(run.incident_ids || []).length} 个关联事故`;
+  const canAdvance = run.status === "running";
+  document.querySelector('[data-action="drill-step"]').disabled = !canAdvance;
+  document.querySelector('[data-action="drill-next-human"]').disabled = !canAdvance;
+  document.querySelector('[data-action="terminate-drill"]').disabled = drillTerminal(run);
+  renderDrillLocation(run);
+  renderDrillTimeline(run);
+  renderDrillCheckpoint(run);
+  renderDrillResult(run);
+  renderDrillRuns();
+}
+
+function focusActiveDrillOnSmallScreen() {
+  if (window.matchMedia("(max-width: 780px)").matches) {
+    window.requestAnimationFrame(() => document.querySelector("#drillActive")?.scrollIntoView({ block: "start", behavior: "smooth" }));
+  }
+}
+
+async function loadDrills() {
+  const [catalog, runs] = await Promise.all([api("/api/drills/catalog"), api("/api/drills/runs?limit=100")]);
+  state.drills.catalog = catalog;
+  state.drills.runs = runs.items || [];
+  renderDrillCatalog();
+  renderDrillRuns();
+  if (state.drills.active?.id) {
+    state.drills.active = await api(`/api/drills/runs/${encodeURIComponent(state.drills.active.id)}`);
+    renderActiveDrill();
+  }
+}
+
+async function openDrills() {
+  if (!["ai_admin", "super_admin"].includes(state.role)) {
+    showToast(`当前是${roleNames[state.role]}工作台，故障演练只对管理员开放`, true);
+    return;
+  }
+  openDialog(drillDialog);
+  try {
+    await loadDrills();
+  } catch (error) {
+    showToast(`演练台加载失败：${error.message}`, true);
+  }
+}
+
+async function startDrill(form) {
+  const values = Object.fromEntries(new FormData(form).entries());
+  const button = form.querySelector('button[type="submit"]');
+  const original = button.textContent;
+  button.disabled = true;
+  button.textContent = "正在注入第一批信号…";
+  try {
+    state.drills.active = await api("/api/drills/runs", { method: "POST", body: JSON.stringify({ ...values, autostart: true }) });
+    showToast("演练已启动；信号已经过统一接入和治理链");
+    await loadDrills();
+    focusActiveDrillOnSmallScreen();
+    await loadIncidents(state.drills.active.incident_ids?.[0]);
+  } finally {
+    button.disabled = false;
+    button.textContent = original;
+  }
+}
+
+async function selectDrillRun(runId) {
+  state.drills.active = await api(`/api/drills/runs/${encodeURIComponent(runId)}`);
+  renderActiveDrill();
+  focusActiveDrillOnSmallScreen();
+}
+
+async function advanceDrill(command) {
+  if (!state.drills.active) return;
+  state.drills.active = await api(`/api/drills/runs/${encodeURIComponent(state.drills.active.id)}/advance`, { method: "POST", body: JSON.stringify({ command }) });
+  renderActiveDrill();
+  await loadIncidents(state.drills.active.incident_ids?.[0]);
+}
+
+async function submitDrillFeedback(form) {
+  if (!state.drills.active) return;
+  const values = Object.fromEntries(new FormData(form).entries());
+  const button = form.querySelector('button[type="submit"]');
+  const original = button.textContent;
+  button.disabled = true;
+  button.textContent = "正在记录并推进…";
+  try {
+    state.drills.active = await api(`/api/drills/runs/${encodeURIComponent(state.drills.active.id)}/feedback`, { method: "POST", body: JSON.stringify(values) });
+    form.reset();
+    renderActiveDrill();
+    await loadDrills();
+    await loadIncidents(state.drills.active.incident_ids?.[0]);
+  } finally {
+    button.disabled = false;
+    button.textContent = original;
+  }
+}
+
+async function terminateDrill() {
+  if (!state.drills.active) return;
+  const reason = window.prompt("请填写终止原因（会进入演练审计记录）", "本次验证到此结束");
+  if (reason === null) return;
+  state.drills.active = await api(`/api/drills/runs/${encodeURIComponent(state.drills.active.id)}/terminate`, { method: "POST", body: JSON.stringify({ reason }) });
+  renderActiveDrill();
+  await loadDrills();
+}
+
+async function revealDrillAnswer() {
+  if (!state.drills.active) return;
+  state.drills.active = await api(`/api/drills/runs/${encodeURIComponent(state.drills.active.id)}?reveal=1`);
+  renderActiveDrill();
+}
+
 async function setLabPlatformState(button) {
   const key = button.dataset.platformKey;
   const select = document.querySelector(`[data-platform-state="${CSS.escape(key)}"]`);
@@ -2004,6 +2280,12 @@ document.addEventListener("click", (event) => {
   }
   if (action === "open-admin") openAdmin();
   if (action === "open-lab") openLab();
+  if (action === "open-drills") openDrills();
+  if (action === "refresh-drills") loadDrills().then(() => showToast("演练记录已刷新")).catch((error) => showToast(error.message, true));
+  if (action === "drill-step") advanceDrill("step").catch((error) => showToast(error.message, true));
+  if (action === "drill-next-human") advanceDrill("next_human").catch((error) => showToast(error.message, true));
+  if (action === "terminate-drill") terminateDrill().catch((error) => showToast(error.message, true));
+  if (action === "reveal-drill-answer") revealDrillAnswer().catch((error) => showToast(error.message, true));
   if (action === "open-governance") openGovernance();
   if (action === "refresh-governance") loadGovernance().then(() => showToast("治理结果已刷新")).catch((error) => showToast(error.message, true));
   if (action === "acknowledge-production-alert") acknowledgeProductionAlert(event.target.closest("[data-action]")).catch((error) => showToast(error.message, true));
@@ -2074,6 +2356,15 @@ document.addEventListener("click", (event) => {
   const agentRunButton = event.target.closest("[data-agent-run-id]");
   if (agentRunButton) selectAgentRun(agentRunButton.dataset.agentRunId).catch((error) => showToast(error.message, true));
 
+  const drillScenarioButton = event.target.closest("[data-drill-scenario-id]");
+  if (drillScenarioButton) {
+    state.drills.selectedScenarioId = drillScenarioButton.dataset.drillScenarioId;
+    renderDrillCatalog();
+  }
+
+  const drillRunButton = event.target.closest("[data-drill-run-id]");
+  if (drillRunButton) selectDrillRun(drillRunButton.dataset.drillRunId).catch((error) => showToast(error.message, true));
+
   const knowledgeButton = event.target.closest(".asset-row[data-knowledge-id]");
   if (knowledgeButton) selectKnowledge(knowledgeButton.dataset.knowledgeId).catch((error) => showToast(error.message, true));
 
@@ -2091,6 +2382,16 @@ document.addEventListener("click", (event) => {
 });
 
 document.addEventListener("submit", (event) => {
+  if (event.target.matches("#drillStartForm")) {
+    event.preventDefault();
+    startDrill(event.target).catch((error) => showToast(`演练启动失败：${error.message}`, true));
+    return;
+  }
+  if (event.target.matches("#drillFeedbackForm")) {
+    event.preventDefault();
+    submitDrillFeedback(event.target).catch((error) => showToast(`反馈提交失败：${error.message}`, true));
+    return;
+  }
   const governanceForm = event.target.closest("#productionAlertForm, #maintenanceWindowForm, #sourceHealthForm, #identityAssertionForm, #changeEventForm, #rosterForm, #assignmentForm, #correlationFeedbackForm");
   if (governanceForm) {
     event.preventDefault();
@@ -2170,6 +2471,26 @@ document.querySelector("#recordSearch").addEventListener("keydown", (event) => {
   }
 });
 document.querySelector("#recordTypeSelect").addEventListener("change", () => loadAdminRecords().catch((error) => showToast(error.message, true)));
+document.querySelector("#drillCategorySelect").addEventListener("change", (event) => {
+  state.drills.category = event.target.value;
+  state.drills.selectedScenarioId = "";
+  renderDrillCatalog();
+});
+document.querySelector("#drillScenarioSelect").addEventListener("change", (event) => {
+  state.drills.selectedScenarioId = event.target.value;
+  renderDrillCatalog();
+});
+document.querySelector("#drillStartForm").addEventListener("change", (event) => {
+  if (event.target.name !== "mode") return;
+  const blind = event.target.value === "blind";
+  document.querySelector("#drillScenarioField").hidden = blind;
+  document.querySelector("#drillScenarioSelect").required = !blind;
+  document.querySelector("#drillCatalogList").hidden = blind;
+  document.querySelector("#drillCatalogCount").textContent = blind ? "随机抽取" : `${(state.drills.catalog?.items || []).filter((item) => item.category === state.drills.category).length} 项`;
+  document.querySelector("#drillModeNote").textContent = blind
+    ? "盲测只公开现象、信号和影响路径；隐藏答案在结束前与运行链物理隔离。"
+    : "定向演练会显示故障名称；运行过程仍由真实模拟信号触发。";
+});
 
 document.querySelectorAll(".dialog-tab").forEach((tab) => {
   tab.addEventListener("click", () => {
@@ -2222,7 +2543,7 @@ document.querySelector("#publishConfirmForm").addEventListener("submit", (event)
   publishRelease(releaseId).catch((error) => showToast(error.message, true));
 });
 
-for (const dialog of [ingestDialog, demoDialog, sourceDialog, facilityDialog, adminDialog, publishConfirmDialog, operationDialog, labDialog, governanceDialog]) {
+for (const dialog of [ingestDialog, demoDialog, sourceDialog, facilityDialog, adminDialog, publishConfirmDialog, operationDialog, labDialog, governanceDialog, drillDialog]) {
   dialog.addEventListener("click", (event) => {
     if (event.target === dialog) closeDialog(dialog);
   });

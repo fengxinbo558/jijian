@@ -1,0 +1,222 @@
+{
+  "schema_version": "drill-catalog-v1",
+  "categories": [
+    {"id": "network", "name": "网络故障", "description": "交换机、端口、模块、线缆、协议与上联"},
+    {"id": "linux", "name": "系统 / Linux", "description": "内核、资源、存储、服务与网卡"},
+    {"id": "hardware", "name": "服务器硬件 / 现场", "description": "硬盘、内存、主板、电源与风扇"},
+    {"id": "facility", "name": "动环", "description": "供电、制冷、温度、漏水与烟雾"},
+    {"id": "application", "name": "应用", "description": "端口、依赖、DNS、证书与数据库"}
+  ],
+  "scenarios": [
+    {
+      "id": "net-optical-module", "version": "1.0.0", "category": "network", "name": "光模块故障或性能退化", "difficulty": "medium", "needs_onsite": true, "owner_team": "网络组", "severity": "critical",
+      "visible_symptom": "交换机端口反复抖动并出现CRC增长，服务器业务网偶发中断。", "source_platforms": ["network_nms", "bmc_redfish", "onsite_feedback"], "workflow_kind": "network_optical_module",
+      "location": {"site": "BJYZ", "row": "D2SC-A", "rack": "08", "rack_position": "BJYZD2SC-A-08-10", "device": "HB-BJYZD2SC-ADC-S1", "interface": "HundredGigE7/0/36"},
+      "impact_path": {"kind": "business_network", "nodes": [{"id": "port", "label": "端口 7/0/36", "type": "interface"}, {"id": "module", "label": "100G光模块", "type": "optical_module"}, {"id": "fiber", "label": "本端至对端光纤", "type": "cable"}, {"id": "server", "label": "bjyz-app-001", "type": "server"}, {"id": "service", "label": "订单服务", "type": "application"}]},
+      "primary_signal": {"source_system": "network_nms", "signal_type": "link_flap_crc", "summary": "端口反复抖动且CRC持续增长", "message": "HundredGigE7/0/36 link flap 17 times; CRC errors 4281; Rx -18.7 dBm", "entity": {"device_name": "HB-BJYZD2SC-ADC-S1", "interface": "HundredGigE7/0/36", "device_type": "switch"}},
+      "supporting_signals": [{"source_system": "bmc_redfish", "signal_type": "nic_link_down", "severity": "warning", "summary": "服务器仍通电但业务网卡链路中断", "message": "PowerState=On; NIC1 Link=Down", "entity": {"sn": "SERVER-SN-DRILL-001", "device_name": "bjyz-app-001", "rack_position": "BJYZD2SC-A-08-10", "device_type": "server"}}],
+      "operator_check": {"prompt": "先核对端口服务和配置；配置正常后由现场按许可更换光模块并反馈结果。", "action": "核对端口并更换模块"},
+      "hidden_truth": {"diagnosis": "optical_module_failure", "label": "本端光模块性能退化", "component": "100G光模块", "owner_team": "网络组", "acceptable_diagnoses": ["optical_module_failure"]}
+    },
+    {
+      "id": "net-fiber-attenuation", "version": "1.0.0", "category": "network", "name": "光纤衰耗、弯折或断纤", "difficulty": "hard", "needs_onsite": true, "owner_team": "网络组", "severity": "critical",
+      "visible_symptom": "端口抖动、接收光功率偏低，更换模块后仍未恢复。", "source_platforms": ["network_nms", "onsite_feedback"], "workflow_kind": "network_fiber",
+      "location": {"site": "BJYZ", "row": "D2SC-A", "rack": "08", "rack_position": "BJYZD2SC-A-08-10", "device": "HB-BJYZD2SC-ADC-S1", "interface": "HundredGigE7/0/36"},
+      "impact_path": {"kind": "business_network", "nodes": [{"id": "port", "label": "本端端口", "type": "interface"}, {"id": "module", "label": "本端模块", "type": "optical_module"}, {"id": "fiber", "label": "跨柜光纤", "type": "cable"}, {"id": "peer", "label": "对端端口", "type": "interface"}]},
+      "primary_signal": {"source_system": "network_nms", "signal_type": "optical_rx_low", "summary": "接收光功率低并伴随链路抖动", "message": "Rx power -22.4 dBm below threshold; link flap continues", "entity": {"device_name": "HB-BJYZD2SC-ADC-S1", "interface": "HundredGigE7/0/36", "device_type": "switch"}},
+      "operator_check": {"prompt": "更换模块后复测本端、线路和对端光功率。", "action": "测光并检查线路"},
+      "hidden_truth": {"diagnosis": "fiber_attenuation", "label": "光纤弯折造成衰耗", "component": "跨柜光纤", "owner_team": "网络组", "acceptable_diagnoses": ["fiber_attenuation", "fiber_failure"]}
+    },
+    {
+      "id": "net-port-hardware", "version": "1.0.0", "category": "network", "name": "交换机端口硬件故障", "difficulty": "hard", "needs_onsite": true, "owner_team": "网络组", "severity": "critical",
+      "visible_symptom": "模块和线缆在其他端口正常，原端口仍持续丢包和抖动。", "source_platforms": ["network_nms", "onsite_feedback"], "workflow_kind": "network_port_hardware",
+      "location": {"site": "BJYZ", "row": "D2SC-A", "rack": "08", "rack_position": "BJYZD2SC-A-08-10", "device": "HB-BJYZD2SC-ADC-S1", "interface": "HundredGigE7/0/36"},
+      "impact_path": {"kind": "business_network", "nodes": [{"id": "port", "label": "疑似故障端口", "type": "interface"}, {"id": "module", "label": "已验证模块", "type": "optical_module"}, {"id": "fiber", "label": "已验证线路", "type": "cable"}, {"id": "server", "label": "下联服务器", "type": "server"}]},
+      "primary_signal": {"source_system": "network_nms", "signal_type": "port_crc_persistent", "summary": "端口CRC和丢包持续增长", "message": "CRC 9821 and discards 3110 continue after transceiver replacement", "entity": {"device_name": "HB-BJYZD2SC-ADC-S1", "interface": "HundredGigE7/0/36", "device_type": "switch"}},
+      "operator_check": {"prompt": "验证模块和线路后，在网络组许可下迁移到备用端口。", "action": "端口交叉验证"},
+      "hidden_truth": {"diagnosis": "switch_port_hardware_failure", "label": "交换机端口硬件故障", "component": "HundredGigE7/0/36", "owner_team": "网络组", "acceptable_diagnoses": ["switch_port_hardware_failure"]}
+    },
+    {
+      "id": "net-port-config", "version": "1.0.0", "category": "network", "name": "端口配置、聚合或协议异常", "difficulty": "medium", "needs_onsite": false, "owner_team": "网络组", "severity": "warning",
+      "visible_symptom": "物理链路在线，但聚合成员未进入转发状态。", "source_platforms": ["network_nms"], "workflow_kind": "network_config",
+      "location": {"site": "BJYZ", "row": "D2SC-A", "rack": "08", "rack_position": "BJYZD2SC-A-08-10", "device": "HB-BJYZD2SC-ADC-S1", "interface": "HundredGigE7/0/36"},
+      "impact_path": {"kind": "business_network", "nodes": [{"id": "port", "label": "成员端口", "type": "interface"}, {"id": "lag", "label": "聚合接口", "type": "logical_interface"}, {"id": "peer", "label": "对端聚合", "type": "logical_interface"}]},
+      "primary_signal": {"source_system": "network_nms", "signal_type": "lacp_member_out", "summary": "LACP成员退出聚合", "message": "LACP member HundredGigE7/0/36 is individual; partner key mismatch", "entity": {"device_name": "HB-BJYZD2SC-ADC-S1", "interface": "HundredGigE7/0/36", "device_type": "switch"}},
+      "operator_check": {"prompt": "网络组核对本端与对端聚合配置并回滚最近变更。", "action": "远程核对配置"},
+      "hidden_truth": {"diagnosis": "network_configuration_mismatch", "label": "聚合配置不一致", "component": "LACP配置", "owner_team": "网络组", "acceptable_diagnoses": ["network_configuration_mismatch", "lacp_mismatch"]}
+    },
+    {
+      "id": "net-switch-uplink", "version": "1.0.0", "category": "network", "name": "交换机整机或上联故障", "difficulty": "hard", "needs_onsite": true, "owner_team": "网络组", "severity": "critical",
+      "visible_symptom": "同一交换机下多台服务器同时不可达，上联邻居消失。", "source_platforms": ["network_nms", "linux_app"], "workflow_kind": "generic",
+      "location": {"site": "BJYZ", "row": "D2MC-C", "rack": "11", "rack_position": "BJYZD2MC-C-11-01", "device": "HB-BJYZD2MC-CIC1-CE12816-41.Int", "interface": "40GE5/0/3"},
+      "impact_path": {"kind": "business_network", "nodes": [{"id": "servers", "label": "下联服务器群", "type": "server_group"}, {"id": "tor", "label": "ToR/Leaf", "type": "switch"}, {"id": "uplink", "label": "上联端口", "type": "interface"}, {"id": "spine", "label": "Spine", "type": "switch"}]},
+      "primary_signal": {"source_system": "network_nms", "signal_type": "switch_uplink_down", "summary": "交换机上联中断并影响多个下联", "message": "uplink 40GE5/0/3 down; 48 downstream endpoints unreachable", "entity": {"device_name": "HB-BJYZD2MC-CIC1-CE12816-41.Int", "interface": "40GE5/0/3", "device_type": "switch"}},
+      "operator_check": {"prompt": "网络组确认设备与上联状态，现场检查供电、指示灯和线缆。", "action": "联合排查上联"},
+      "hidden_truth": {"diagnosis": "switch_uplink_failure", "label": "交换机上联故障", "component": "上联端口/模块", "owner_team": "网络组", "acceptable_diagnoses": ["switch_uplink_failure", "switch_failure"]}
+    },
+
+    {
+      "id": "linux-oom", "version": "1.0.0", "category": "linux", "name": "OOM导致进程被终止", "difficulty": "easy", "needs_onsite": false, "owner_team": "系统组", "severity": "critical", "visible_symptom": "应用突然退出，主机仍在线。", "source_platforms": ["linux_app"], "workflow_kind": "generic",
+      "location": {"site": "BJYZ", "row": "D2SC-A", "rack": "08", "rack_position": "BJYZD2SC-A-08-10", "device": "bjyz-app-001", "interface": ""},
+      "impact_path": {"kind": "application", "nodes": [{"id": "host", "label": "Linux主机", "type": "server"}, {"id": "memory", "label": "内存资源", "type": "resource"}, {"id": "process", "label": "Java进程", "type": "process"}]},
+      "primary_signal": {"source_system": "linux_app", "signal_type": "oom_kill", "summary": "内核OOM终止Java进程", "message": "Out of memory: Killed process 2187 (java) total-vm:8388608k", "entity": {"sn": "SERVER-SN-DRILL-001", "device_name": "bjyz-app-001", "rack_position": "BJYZD2SC-A-08-10", "device_type": "server"}},
+      "operator_check": {"prompt": "系统组核对内存趋势、进程限制和业务负载后反馈恢复情况。", "action": "远程分析内存"},
+      "hidden_truth": {"diagnosis": "linux_oom", "label": "主机内存耗尽触发OOM", "component": "Linux内存资源", "owner_team": "系统组", "acceptable_diagnoses": ["linux_oom"]}
+    },
+    {
+      "id": "linux-disk-readonly", "version": "1.0.0", "category": "linux", "name": "磁盘I/O错误及文件系统只读", "difficulty": "medium", "needs_onsite": true, "owner_team": "系统组", "severity": "critical", "visible_symptom": "应用写入失败，文件系统切换为只读。", "source_platforms": ["linux_app", "bmc_redfish"], "workflow_kind": "generic",
+      "location": {"site": "BJYZ", "row": "D2SC-A", "rack": "08", "rack_position": "BJYZD2SC-A-08-10", "device": "bjyz-storage-001", "interface": "Bay 3"},
+      "impact_path": {"kind": "hardware", "nodes": [{"id": "filesystem", "label": "业务文件系统", "type": "filesystem"}, {"id": "block", "label": "/dev/sdb", "type": "block_device"}, {"id": "disk", "label": "Bay 3硬盘", "type": "disk"}]},
+      "primary_signal": {"source_system": "linux_app", "signal_type": "disk_io_readonly", "summary": "磁盘I/O错误导致文件系统只读", "message": "blk_update_request: I/O error, dev sdb; EXT4-fs remounting filesystem read-only", "entity": {"sn": "SERVER-SN-DRILL-002", "device_name": "bjyz-storage-001", "rack_position": "BJYZD2SC-A-08-10", "device_type": "server"}},
+      "operator_check": {"prompt": "系统组确认业务迁移和盘位映射后，现场按许可处理硬盘。", "action": "核对盘位并处理"},
+      "hidden_truth": {"diagnosis": "disk_media_failure", "label": "磁盘介质故障", "component": "Bay 3硬盘", "owner_team": "系统组", "acceptable_diagnoses": ["disk_media_failure", "disk_io_failure"]}
+    },
+    {
+      "id": "linux-service-loop", "version": "1.0.0", "category": "linux", "name": "systemd服务重启循环", "difficulty": "easy", "needs_onsite": false, "owner_team": "系统组", "severity": "warning", "visible_symptom": "服务反复启动失败，主机和网络正常。", "source_platforms": ["linux_app"], "workflow_kind": "generic",
+      "location": {"site": "BJYZ", "row": "D2SC-A", "rack": "08", "rack_position": "BJYZD2SC-A-08-10", "device": "bjyz-app-001", "interface": ""},
+      "impact_path": {"kind": "application", "nodes": [{"id": "host", "label": "Linux主机", "type": "server"}, {"id": "systemd", "label": "systemd", "type": "system"}, {"id": "service", "label": "order-api.service", "type": "service"}]},
+      "primary_signal": {"source_system": "linux_app", "signal_type": "service_restart_loop", "summary": "systemd服务进入重启循环", "message": "order-api.service: Start request repeated too quickly; Failed with result exit-code", "entity": {"sn": "SERVER-SN-DRILL-001", "device_name": "bjyz-app-001", "rack_position": "BJYZD2SC-A-08-10", "device_type": "server"}},
+      "operator_check": {"prompt": "系统组查询服务日志和最近配置，完成修复后验证稳定运行。", "action": "远程检查服务"},
+      "hidden_truth": {"diagnosis": "systemd_restart_loop", "label": "服务启动失败循环", "component": "order-api.service", "owner_team": "系统组", "acceptable_diagnoses": ["systemd_restart_loop", "service_start_failure"]}
+    },
+    {
+      "id": "linux-nic-bond", "version": "1.0.0", "category": "linux", "name": "Linux网卡、Bond或驱动异常", "difficulty": "medium", "needs_onsite": false, "owner_team": "系统组", "severity": "critical", "visible_symptom": "交换机物理端口在线，Linux侧Bond成员退出。", "source_platforms": ["linux_app", "network_nms"], "workflow_kind": "generic",
+      "location": {"site": "BJYZ", "row": "D2SC-A", "rack": "08", "rack_position": "BJYZD2SC-A-08-10", "device": "bjyz-app-001", "interface": "eth0"},
+      "impact_path": {"kind": "business_network", "nodes": [{"id": "port", "label": "交换机端口", "type": "interface"}, {"id": "nic", "label": "服务器eth0", "type": "nic"}, {"id": "bond", "label": "bond0", "type": "logical_interface"}]},
+      "primary_signal": {"source_system": "linux_app", "signal_type": "bond_member_failure", "summary": "Bond成员因驱动重置退出", "message": "ixgbe reset failed; bond0: link status definitely down for interface eth0", "entity": {"sn": "SERVER-SN-DRILL-001", "device_name": "bjyz-app-001", "rack_position": "BJYZD2SC-A-08-10", "device_type": "server"}},
+      "operator_check": {"prompt": "系统组核对驱动、Bond状态和网络端口证据。", "action": "远程检查网卡"},
+      "hidden_truth": {"diagnosis": "linux_nic_driver_failure", "label": "Linux网卡驱动异常", "component": "eth0驱动", "owner_team": "系统组", "acceptable_diagnoses": ["linux_nic_driver_failure", "bond_member_failure"]}
+    },
+    {
+      "id": "linux-soft-lockup", "version": "1.0.0", "category": "linux", "name": "内核软锁死或Watchdog异常", "difficulty": "hard", "needs_onsite": false, "owner_team": "系统组", "severity": "critical", "visible_symptom": "系统响应严重变慢，内核报告CPU长时间占用。", "source_platforms": ["linux_app", "bmc_redfish"], "workflow_kind": "generic",
+      "location": {"site": "BJYZ", "row": "D2SC-A", "rack": "08", "rack_position": "BJYZD2SC-A-08-10", "device": "bjyz-compute-009", "interface": ""},
+      "impact_path": {"kind": "system", "nodes": [{"id": "host", "label": "计算节点", "type": "server"}, {"id": "kernel", "label": "Linux内核", "type": "system"}, {"id": "cpu", "label": "CPU 7", "type": "cpu"}]},
+      "primary_signal": {"source_system": "linux_app", "signal_type": "kernel_soft_lockup", "summary": "Watchdog检测到内核软锁死", "message": "watchdog: BUG: soft lockup - CPU#7 stuck for 26s", "entity": {"sn": "SERVER-SN-DRILL-009", "device_name": "bjyz-compute-009", "rack_position": "BJYZD2SC-A-08-10", "device_type": "server"}},
+      "operator_check": {"prompt": "系统组保留内核现场并核对负载、驱动和最近变更。", "action": "远程分析内核"},
+      "hidden_truth": {"diagnosis": "kernel_soft_lockup", "label": "内核软锁死", "component": "Linux内核", "owner_team": "系统组", "acceptable_diagnoses": ["kernel_soft_lockup"]}
+    },
+
+    {
+      "id": "hw-disk-smart", "version": "1.0.0", "category": "hardware", "name": "硬盘SMART预测故障", "difficulty": "easy", "needs_onsite": true, "owner_team": "系统组", "severity": "warning", "visible_symptom": "BMC和SMART报告同一块盘健康退化。", "source_platforms": ["bmc_redfish", "linux_app", "onsite_feedback"], "workflow_kind": "generic",
+      "location": {"site": "BJYZ", "row": "D2SC-A", "rack": "08", "rack_position": "BJYZD2SC-A-08-10", "device": "SERVER-SN-DRILL-002", "interface": "Bay 3"},
+      "impact_path": {"kind": "hardware", "nodes": [{"id": "server", "label": "服务器", "type": "server"}, {"id": "controller", "label": "存储控制器", "type": "controller"}, {"id": "disk", "label": "Bay 3硬盘", "type": "disk"}]},
+      "primary_signal": {"source_system": "bmc_redfish", "signal_type": "disk_predictive_failure", "summary": "BMC报告硬盘预测故障", "message": "Drive Bay 3 PredictiveFailure=true; MediaErrors=19", "entity": {"sn": "SERVER-SN-DRILL-002", "device_name": "bjyz-storage-001", "rack_position": "BJYZD2SC-A-08-10", "device_type": "server"}},
+      "operator_check": {"prompt": "核对完整SN、盘位、RAID状态和业务许可后更换硬盘。", "action": "更换并验证硬盘"},
+      "hidden_truth": {"diagnosis": "disk_predictive_failure", "label": "硬盘介质健康退化", "component": "Bay 3硬盘", "owner_team": "系统组", "acceptable_diagnoses": ["disk_predictive_failure", "disk_media_failure"]}
+    },
+    {
+      "id": "hw-memory-ecc", "version": "1.0.0", "category": "hardware", "name": "ECC内存异常", "difficulty": "medium", "needs_onsite": true, "owner_team": "系统组", "severity": "critical", "visible_symptom": "EDAC与BMC在同一DIMM记录不可纠正错误。", "source_platforms": ["linux_app", "bmc_redfish", "onsite_feedback"], "workflow_kind": "generic",
+      "location": {"site": "BJYZ", "row": "D2SC-A", "rack": "08", "rack_position": "BJYZD2SC-A-08-10", "device": "SERVER-SN-DRILL-003", "interface": "DIMM A1"},
+      "impact_path": {"kind": "hardware", "nodes": [{"id": "server", "label": "服务器", "type": "server"}, {"id": "cpu", "label": "CPU0内存通道", "type": "cpu"}, {"id": "dimm", "label": "DIMM A1", "type": "memory"}]},
+      "primary_signal": {"source_system": "linux_app", "signal_type": "ecc_uncorrectable", "summary": "内存不可纠正ECC错误", "message": "EDAC MC0: UE row 0 channel 0 label DIMM_A1; MCE", "entity": {"sn": "SERVER-SN-DRILL-003", "device_name": "bjyz-compute-003", "rack_position": "BJYZD2SC-A-08-10", "device_type": "server"}},
+      "operator_check": {"prompt": "系统组核对BMC槽位映射和业务许可后安排内存处理。", "action": "核对并处理内存"},
+      "hidden_truth": {"diagnosis": "memory_ecc_failure", "label": "DIMM A1不可纠正ECC故障", "component": "DIMM A1", "owner_team": "系统组", "acceptable_diagnoses": ["memory_ecc_failure", "ecc_uncorrectable"]}
+    },
+    {
+      "id": "hw-power-supply", "version": "1.0.0", "category": "hardware", "name": "服务器电源模块故障", "difficulty": "easy", "needs_onsite": true, "owner_team": "系统组", "severity": "warning", "visible_symptom": "服务器仍运行，但BMC报告一路电源失效。", "source_platforms": ["bmc_redfish", "onsite_feedback"], "workflow_kind": "generic",
+      "location": {"site": "BJYZ", "row": "D2SC-A", "rack": "08", "rack_position": "BJYZD2SC-A-08-10", "device": "SERVER-SN-DRILL-004", "interface": "PSU2"},
+      "impact_path": {"kind": "oob_management", "nodes": [{"id": "bmc", "label": "BMC", "type": "bmc"}, {"id": "server", "label": "服务器", "type": "server"}, {"id": "psu", "label": "PSU2", "type": "power_supply"}]},
+      "primary_signal": {"source_system": "bmc_redfish", "signal_type": "psu_failed", "summary": "服务器PSU2故障但仍由PSU1供电", "message": "PowerSupply PSU2 Health=Critical; PSU1 Health=OK; PowerState=On", "entity": {"sn": "SERVER-SN-DRILL-004", "device_name": "bjyz-compute-004", "rack_position": "BJYZD2SC-A-08-10", "device_type": "server"}},
+      "operator_check": {"prompt": "核对完整SN与冗余状态，在允许热插拔时更换PSU2。", "action": "更换电源模块"},
+      "hidden_truth": {"diagnosis": "power_supply_failure", "label": "PSU2电源模块故障", "component": "PSU2", "owner_team": "系统组", "acceptable_diagnoses": ["power_supply_failure"]}
+    },
+    {
+      "id": "hw-fan", "version": "1.0.0", "category": "hardware", "name": "服务器风扇故障", "difficulty": "easy", "needs_onsite": true, "owner_team": "系统组", "severity": "warning", "visible_symptom": "BMC报告单个风扇停转，其余风扇升速。", "source_platforms": ["bmc_redfish", "onsite_feedback"], "workflow_kind": "generic",
+      "location": {"site": "BJYZ", "row": "D2SC-A", "rack": "08", "rack_position": "BJYZD2SC-A-08-10", "device": "SERVER-SN-DRILL-005", "interface": "Fan 4"},
+      "impact_path": {"kind": "oob_management", "nodes": [{"id": "bmc", "label": "BMC", "type": "bmc"}, {"id": "fan", "label": "Fan 4", "type": "fan"}, {"id": "thermal", "label": "机内温度", "type": "sensor"}]},
+      "primary_signal": {"source_system": "bmc_redfish", "signal_type": "fan_failed", "summary": "风扇4停转且冗余下降", "message": "Fan 4 RPM=0 Health=Critical; Fan redundancy degraded", "entity": {"sn": "SERVER-SN-DRILL-005", "device_name": "bjyz-compute-005", "rack_position": "BJYZD2SC-A-08-10", "device_type": "server"}},
+      "operator_check": {"prompt": "核对完整SN和风扇编号，在业务许可下更换并验证。", "action": "更换风扇"},
+      "hidden_truth": {"diagnosis": "fan_failure", "label": "Fan 4硬件故障", "component": "Fan 4", "owner_team": "系统组", "acceptable_diagnoses": ["fan_failure"]}
+    },
+    {
+      "id": "hw-mainboard", "version": "1.0.0", "category": "hardware", "name": "更换报错部件无效后的疑似主板故障", "difficulty": "hard", "needs_onsite": true, "owner_team": "系统组", "severity": "critical", "visible_symptom": "机器无法启动，替换告警内存后仍无法通过POST。", "source_platforms": ["bmc_redfish", "onsite_feedback"], "workflow_kind": "generic",
+      "location": {"site": "BJYZ", "row": "D2SC-A", "rack": "08", "rack_position": "BJYZD2SC-A-08-10", "device": "SERVER-SN-DRILL-006", "interface": "Mainboard"},
+      "impact_path": {"kind": "hardware", "nodes": [{"id": "bmc", "label": "BMC/SEL", "type": "bmc"}, {"id": "memory", "label": "已替换内存", "type": "memory"}, {"id": "board", "label": "主板/内存通道", "type": "mainboard"}]},
+      "primary_signal": {"source_system": "bmc_redfish", "signal_type": "post_failure_after_part_swap", "summary": "更换告警内存后仍无法完成POST", "message": "POST halted; memory replacement completed; same channel initialization error", "entity": {"sn": "SERVER-SN-DRILL-006", "device_name": "bjyz-compute-006", "rack_position": "BJYZD2SC-A-08-10", "device_type": "server"}},
+      "operator_check": {"prompt": "记录已完成的交叉验证并转系统组/厂商确认主板处理方案。", "action": "完成交叉验证并升级"},
+      "hidden_truth": {"diagnosis": "mainboard_memory_channel_failure", "label": "主板内存通道故障", "component": "主板", "owner_team": "系统组", "acceptable_diagnoses": ["mainboard_memory_channel_failure", "mainboard_failure"]}
+    },
+
+    {
+      "id": "fac-core-single-feed", "version": "1.0.0", "category": "facility", "name": "核心机房单路掉电", "difficulty": "medium", "needs_onsite": true, "owner_team": "动环", "severity": "critical", "visible_symptom": "核心机房一路市电丢失，另一路仍在供电。", "source_platforms": ["facility_dcim", "bmc_redfish"], "workflow_kind": "generic",
+      "location": {"site": "CORE-LAB", "row": "A", "rack": "POWER", "rack_position": "核心机房供电区", "device": "Power Feed A", "interface": ""},
+      "impact_path": {"kind": "facility", "nodes": [{"id": "feed", "label": "供电A路", "type": "power_feed"}, {"id": "ups", "label": "UPS/PDU", "type": "power"}, {"id": "core", "label": "核心设备", "type": "device_group"}]},
+      "primary_signal": {"source_system": "facility_dcim", "signal_type": "core_single_feed_loss", "summary": "核心机房A路供电中断", "message": "CORE-LAB feed A lost; feed B healthy; core devices online", "entity": {"asset_id": "power:CORE-LAB-A", "device_name": "Power Feed A", "device_type": "facility"}},
+      "operator_check": {"prompt": "立即按CC规则通报并由动环确认供电恢复进展。", "action": "动环检查并通报"},
+      "hidden_truth": {"diagnosis": "core_single_feed_loss", "label": "核心机房单路掉电", "component": "供电A路", "owner_team": "动环", "acceptable_diagnoses": ["core_single_feed_loss"]}
+    },
+    {
+      "id": "fac-dual-feed", "version": "1.0.0", "category": "facility", "name": "机房双路掉电", "difficulty": "hard", "needs_onsite": true, "owner_team": "动环", "severity": "critical", "visible_symptom": "A/B两路供电同时消失，多个设备离线。", "source_platforms": ["facility_dcim", "network_nms", "bmc_redfish"], "workflow_kind": "generic",
+      "location": {"site": "BJYZ", "row": "D2MC", "rack": "POWER", "rack_position": "D2MC供电区", "device": "Power Feeds A/B", "interface": ""},
+      "impact_path": {"kind": "facility", "nodes": [{"id": "feeds", "label": "A/B供电", "type": "power_feed"}, {"id": "pdu", "label": "列头柜/PDU", "type": "power"}, {"id": "racks", "label": "受影响机柜", "type": "rack_group"}]},
+      "primary_signal": {"source_system": "facility_dcim", "signal_type": "dual_feed_loss", "summary": "机房A/B双路供电中断", "message": "Feed A=OFF; Feed B=OFF; multiple racks de-energized", "entity": {"asset_id": "power:BJYZ-D2MC", "device_name": "D2MC Power", "device_type": "facility"}},
+      "operator_check": {"prompt": "立即启动重大事件流程，动环确认供电和设备影响。", "action": "双路供电应急处理"},
+      "hidden_truth": {"diagnosis": "dual_feed_loss", "label": "机房双路供电中断", "component": "A/B供电", "owner_team": "动环", "acceptable_diagnoses": ["dual_feed_loss"]}
+    },
+    {
+      "id": "fac-cooling-high-temp", "version": "1.0.0", "category": "facility", "name": "制冷异常导致区域高温", "difficulty": "medium", "needs_onsite": true, "owner_team": "动环", "severity": "critical", "visible_symptom": "一排进风温度持续上升，多台服务器风扇升速。", "source_platforms": ["facility_dcim", "bmc_redfish", "linux_app"], "workflow_kind": "generic",
+      "location": {"site": "BJYZ", "row": "D2SC-A", "rack": "ROW", "rack_position": "D2SC-A排", "device": "Cooling Zone A", "interface": ""},
+      "impact_path": {"kind": "facility", "nodes": [{"id": "cooling", "label": "制冷区域A", "type": "cooling"}, {"id": "aisle", "label": "A排冷通道", "type": "facility_zone"}, {"id": "servers", "label": "多台服务器", "type": "server_group"}]},
+      "primary_signal": {"source_system": "facility_dcim", "signal_type": "cooling_temperature_high", "summary": "A排冷通道温度持续升高", "message": "cold aisle A temperature 34.2C and rising", "entity": {"asset_id": "zone:BJYZ-D2SC-A", "device_name": "Cooling Zone A", "device_type": "facility"}},
+      "operator_check": {"prompt": "现场联系动环检查空调和气流，并向系统/网络组确认设备影响。", "action": "检查制冷与设备影响"},
+      "hidden_truth": {"diagnosis": "cooling_zone_failure", "label": "制冷区域异常", "component": "A排制冷", "owner_team": "动环", "acceptable_diagnoses": ["cooling_zone_failure", "facility_cooling_failure"]}
+    },
+    {
+      "id": "fac-water-core", "version": "1.0.0", "category": "facility", "name": "漏水影响设备或核心网络", "difficulty": "hard", "needs_onsite": true, "owner_team": "动环", "severity": "critical", "visible_symptom": "漏水传感器告警，同时核心网络设备出现异常。", "source_platforms": ["facility_dcim", "network_nms", "onsite_feedback"], "workflow_kind": "generic",
+      "location": {"site": "CORE-LAB", "row": "CORE-A", "rack": "01", "rack_position": "CORE-A-01", "device": "Core Switch Pair", "interface": ""},
+      "impact_path": {"kind": "facility", "nodes": [{"id": "sensor", "label": "漏水传感器", "type": "water_sensor"}, {"id": "rack", "label": "核心机柜", "type": "rack"}, {"id": "core", "label": "核心交换机", "type": "switch"}]},
+      "primary_signal": {"source_system": "facility_dcim", "signal_type": "water_affecting_core", "summary": "核心机柜附近漏水并影响设备", "message": "water rope alarm in CORE-A-01; core switch power instability detected", "entity": {"asset_id": "water:CORE-A-01", "device_name": "CORE-A-01 Water Sensor", "device_type": "facility"}},
+      "operator_check": {"prompt": "立即按重大事件流程通报，现场和动环确认漏水范围与设备安全。", "action": "隔离漏水并保护设备"},
+      "hidden_truth": {"diagnosis": "water_ingress_core_impact", "label": "漏水影响核心设备", "component": "核心机柜区域", "owner_team": "动环", "acceptable_diagnoses": ["water_ingress_core_impact"]}
+    },
+    {
+      "id": "fac-smoke", "version": "1.0.0", "category": "facility", "name": "烟雾告警", "difficulty": "hard", "needs_onsite": true, "owner_team": "动环", "severity": "critical", "visible_symptom": "烟感出现告警，尚未确认是否真实火情。", "source_platforms": ["facility_dcim", "onsite_feedback"], "workflow_kind": "generic",
+      "location": {"site": "BJYZ", "row": "D2MC", "rack": "ZONE", "rack_position": "D2MC区域", "device": "Smoke Sensor 07", "interface": ""},
+      "impact_path": {"kind": "facility", "nodes": [{"id": "sensor", "label": "烟感07", "type": "smoke_sensor"}, {"id": "zone", "label": "D2MC区域", "type": "facility_zone"}, {"id": "racks", "label": "相邻机柜", "type": "rack_group"}]},
+      "primary_signal": {"source_system": "facility_dcim", "signal_type": "smoke_alarm", "summary": "D2MC区域烟感告警", "message": "Smoke detector 07 alarm; fire not yet visually confirmed", "entity": {"asset_id": "smoke:BJYZ-D2MC-07", "device_name": "Smoke Sensor 07", "device_type": "facility"}},
+      "operator_check": {"prompt": "按消防SOP立即进行现场确认并反馈，不由AI决定处置动作。", "action": "现场消防确认"},
+      "hidden_truth": {"diagnosis": "smoke_sensor_alarm", "label": "烟雾传感器告警待现场确认", "component": "烟感07", "owner_team": "动环", "acceptable_diagnoses": ["smoke_sensor_alarm", "fire_risk"]}
+    },
+
+    {
+      "id": "app-port-conflict", "version": "1.0.0", "category": "application", "name": "监听端口冲突", "difficulty": "easy", "needs_onsite": false, "owner_team": "应用负责人", "severity": "warning", "visible_symptom": "新服务启动失败，主机与网络正常。", "source_platforms": ["linux_app"], "workflow_kind": "generic",
+      "location": {"site": "BJYZ", "row": "D2SC-A", "rack": "08", "rack_position": "BJYZD2SC-A-08-10", "device": "order-api", "interface": "8080"},
+      "impact_path": {"kind": "application", "nodes": [{"id": "host", "label": "Linux主机", "type": "server"}, {"id": "port", "label": "TCP 8080", "type": "socket"}, {"id": "service", "label": "order-api", "type": "application"}]},
+      "primary_signal": {"source_system": "linux_app", "signal_type": "port_bind_conflict", "summary": "应用无法绑定监听端口", "message": "java.net.BindException: Address already in use: bind 0.0.0.0:8080", "entity": {"asset_id": "service:order-api", "device_name": "order-api", "device_type": "application"}},
+      "operator_check": {"prompt": "应用负责人确认占用进程和发布变更，调整后验证服务。", "action": "处理端口冲突"},
+      "hidden_truth": {"diagnosis": "application_port_conflict", "label": "应用监听端口被占用", "component": "TCP 8080", "owner_team": "应用负责人", "acceptable_diagnoses": ["application_port_conflict", "port_bind_conflict"]}
+    },
+    {
+      "id": "app-dependency-timeout", "version": "1.0.0", "category": "application", "name": "下游依赖连接超时或拒绝", "difficulty": "medium", "needs_onsite": false, "owner_team": "应用负责人", "severity": "critical", "visible_symptom": "应用错误率升高，下游连接持续超时。", "source_platforms": ["linux_app", "network_nms"], "workflow_kind": "generic",
+      "location": {"site": "BJYZ", "row": "D2SC-A", "rack": "08", "rack_position": "BJYZD2SC-A-08-10", "device": "order-api", "interface": "payment:8443"},
+      "impact_path": {"kind": "application", "nodes": [{"id": "caller", "label": "order-api", "type": "application"}, {"id": "network", "label": "服务网络", "type": "network"}, {"id": "callee", "label": "payment-api", "type": "application"}]},
+      "primary_signal": {"source_system": "linux_app", "signal_type": "dependency_timeout", "summary": "订单服务调用支付服务超时", "message": "upstream payment-api:8443 connection timeout after 3000ms", "entity": {"asset_id": "service:order-api", "device_name": "order-api", "device_type": "application"}},
+      "operator_check": {"prompt": "应用负责人结合网络证据核对下游健康、连接池和超时配置。", "action": "排查下游依赖"},
+      "hidden_truth": {"diagnosis": "downstream_dependency_timeout", "label": "下游服务不可用导致调用超时", "component": "payment-api", "owner_team": "应用负责人", "acceptable_diagnoses": ["downstream_dependency_timeout", "dependency_unavailable"]}
+    },
+    {
+      "id": "app-dns", "version": "1.0.0", "category": "application", "name": "DNS解析异常", "difficulty": "easy", "needs_onsite": false, "owner_team": "系统组", "severity": "critical", "visible_symptom": "应用无法解析依赖域名，但IP直连测试可达。", "source_platforms": ["linux_app"], "workflow_kind": "generic",
+      "location": {"site": "BJYZ", "row": "D2SC-A", "rack": "08", "rack_position": "BJYZD2SC-A-08-10", "device": "order-api", "interface": "DNS"},
+      "impact_path": {"kind": "application", "nodes": [{"id": "app", "label": "order-api", "type": "application"}, {"id": "resolver", "label": "本机解析器", "type": "system"}, {"id": "dns", "label": "DNS服务", "type": "service"}]},
+      "primary_signal": {"source_system": "linux_app", "signal_type": "dns_resolution_failure", "summary": "应用依赖域名解析失败", "message": "Temporary failure in name resolution: payment.service.internal", "entity": {"asset_id": "service:order-api", "device_name": "order-api", "device_type": "application"}},
+      "operator_check": {"prompt": "系统组检查解析器、DNS服务和配置变更。", "action": "修复DNS解析"},
+      "hidden_truth": {"diagnosis": "dns_resolution_failure", "label": "DNS解析服务异常", "component": "内部DNS", "owner_team": "系统组", "acceptable_diagnoses": ["dns_resolution_failure"]}
+    },
+    {
+      "id": "app-tls-expired", "version": "1.0.0", "category": "application", "name": "TLS证书过期", "difficulty": "easy", "needs_onsite": false, "owner_team": "应用负责人", "severity": "critical", "visible_symptom": "HTTPS请求突然失败，网络端口可达。", "source_platforms": ["linux_app"], "workflow_kind": "generic",
+      "location": {"site": "BJYZ", "row": "SERVICE", "rack": "ADC", "rack_position": "应用服务层", "device": "api.example.internal", "interface": "443"},
+      "impact_path": {"kind": "application", "nodes": [{"id": "client", "label": "客户端", "type": "application"}, {"id": "adc", "label": "ADC/反向代理", "type": "adc"}, {"id": "cert", "label": "TLS证书", "type": "certificate"}, {"id": "app", "label": "API服务", "type": "application"}]},
+      "primary_signal": {"source_system": "linux_app", "signal_type": "tls_certificate_expired", "summary": "服务端TLS证书已过期", "message": "x509: certificate has expired or is not yet valid for api.example.internal", "entity": {"asset_id": "service:api-gateway", "device_name": "api.example.internal", "device_type": "application"}},
+      "operator_check": {"prompt": "应用负责人核对证书资产和发布记录，更新后验证握手。", "action": "更新并验证证书"},
+      "hidden_truth": {"diagnosis": "tls_certificate_expired", "label": "TLS证书过期", "component": "api.example.internal证书", "owner_team": "应用负责人", "acceptable_diagnoses": ["tls_certificate_expired"]}
+    },
+    {
+      "id": "app-db-deadlock", "version": "1.0.0", "category": "application", "name": "数据库死锁", "difficulty": "medium", "needs_onsite": false, "owner_team": "应用负责人", "severity": "warning", "visible_symptom": "部分事务失败并自动回滚，主机和网络正常。", "source_platforms": ["linux_app"], "workflow_kind": "generic",
+      "location": {"site": "BJYZ", "row": "SERVICE", "rack": "DB", "rack_position": "数据库服务层", "device": "order-db", "interface": "3306"},
+      "impact_path": {"kind": "application", "nodes": [{"id": "app", "label": "order-api", "type": "application"}, {"id": "db", "label": "order-db", "type": "database"}, {"id": "locks", "label": "事务锁", "type": "database_resource"}]},
+      "primary_signal": {"source_system": "linux_app", "signal_type": "database_deadlock", "summary": "数据库检测到事务死锁", "message": "Deadlock found when trying to get lock; transaction rolled back", "entity": {"asset_id": "database:order-db", "device_name": "order-db", "device_type": "application"}},
+      "operator_check": {"prompt": "应用/数据库负责人分析死锁图、事务顺序和最近发布。", "action": "处理数据库死锁"},
+      "hidden_truth": {"diagnosis": "database_deadlock", "label": "数据库事务死锁", "component": "订单事务锁", "owner_team": "应用负责人", "acceptable_diagnoses": ["database_deadlock"]}
+    }
+  ]
+}
