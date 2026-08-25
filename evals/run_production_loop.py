@@ -273,7 +273,7 @@ def build_report(results: List[Dict[str, Any]], started_at: str) -> Tuple[Dict[s
         for item_check in item["checks"]:
             lines.append(f"- {'通过' if item_check['passed'] else '失败'}｜{item_check['name']}：实际 `{item_check['actual']}`，预期 `{item_check['expected']}`")
         lines.append("")
-    return report, "\n".join(lines)
+    return report, "\n".join(lines).rstrip()
 
 
 def main() -> int:
