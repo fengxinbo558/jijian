@@ -134,15 +134,20 @@ function translated(group, value) {
 }
 
 async function api(path, options = {}) {
-  const response = await fetch(path, {
-    ...options,
-    headers: {
-      "Content-Type": "application/json",
-      "X-IDCAI-Role": state.role,
-      "X-IDCAI-User": state.actor,
-      ...(options.headers || {}),
-    },
-  });
+  let response;
+  try {
+    response = await fetch(path, {
+      ...options,
+      headers: {
+        "Content-Type": "application/json",
+        "X-IDCAI-Role": state.role,
+        "X-IDCAI-User": state.actor,
+        ...(options.headers || {}),
+      },
+    });
+  } catch (_error) {
+    throw new Error("无法连接后台服务。页面可能仍显示上次数据，请确认本地服务已启动后重试");
+  }
   let payload = {};
   try {
     payload = await response.json();
