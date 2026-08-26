@@ -13,17 +13,31 @@ page.on("console", (message) => {
 page.on("pageerror", (error) => consoleErrors.push(error.message));
 
 try {
+  const failurePage = await browser.newPage({ viewport: { width: 1200, height: 800 } });
+  await failurePage.route("**/api/drills/catalog", (route) => route.abort());
+  await failurePage.goto(baseURL, { waitUntil: "networkidle" });
+  await failurePage.selectOption("#roleSelect", "ai_admin");
+  await failurePage.getByRole("button", { name: /故障演练/ }).click();
+  await failurePage.locator('#drillLoadState[data-state="error"]').waitFor();
+  if (!(await failurePage.getByRole("button", { name: "重新加载" }).isVisible())) throw new Error("演练目录失败后没有重试入口");
+  if (await failurePage.locator("#drillCategoryTabs button").count()) throw new Error("目录失败时仍显示空分类控件");
+  await failurePage.close();
+
   await page.goto(baseURL, { waitUntil: "networkidle" });
   await page.selectOption("#roleSelect", "ai_admin");
   await page.getByRole("button", { name: /故障演练/ }).click();
   await page.locator("#drillDialog").waitFor({ state: "visible" });
   await page.waitForFunction(() => document.querySelectorAll("#drillCatalogList .drill-catalog-item").length === 5);
   if ((await page.locator("#drillCatalogList .drill-catalog-item").count()) !== 5) throw new Error("网络分类不是5个场景");
+  if ((await page.locator("#drillCategoryTabs button").count()) !== 5) throw new Error("没有直接显示五个故障分类");
 
   await page.getByRole("button", { name: "触发这次演练" }).click();
+  await page.getByRole("button", { name: "走到人工节点" }).click();
   await page.waitForFunction(() => document.querySelector("#drillCheckpointTitle")?.textContent === "先核对端口服务与配置");
+  await page.locator(".drill-detail-drawer").nth(1).locator("summary").click();
   const timeline = await page.locator("#drillStepList").innerText();
   if (!timeline.includes("接入记录") || !timeline.includes("治理结论")) throw new Error("审计时间线缺少接入或治理记录");
+  await page.locator(".drill-detail-drawer").nth(0).locator("summary").click();
   if (!(await page.locator("#drillLocation").innerText()).includes("机架位")) throw new Error("物理定位卡缺少机架位");
   if ((await page.locator("#drillImpactPath > div").count()) < 2) throw new Error("影响路径没有形成节点链");
 
@@ -31,7 +45,10 @@ try {
   for (let index = 0; index < 3; index += 1) {
     await page.locator("#drillActionChoices input").first().check();
     await page.getByRole("button", { name: "提交反馈并继续" }).click();
-    if (index < 2) await page.waitForFunction((expected) => document.querySelector("#drillCheckpointTitle")?.textContent === expected, nextTitles[index]);
+    if (index < 2) {
+      await page.getByRole("button", { name: "走到人工节点" }).click();
+      await page.waitForFunction((expected) => document.querySelector("#drillCheckpointTitle")?.textContent === expected, nextTitles[index]);
+    }
   }
   await page.locator("#drillResult:not([hidden])").waitFor();
   await page.getByRole("button", { name: "揭晓隐藏答案" }).click();
@@ -39,9 +56,12 @@ try {
   if (!(await page.locator("#drillTruth").innerText()).includes("本端光模块性能退化")) throw new Error("定向演练答案与分支不一致");
   await page.screenshot({ path: "/tmp/idc-ai-ops-drill-desktop.png", fullPage: false });
 
+  await page.getByRole("button", { name: "新的演练" }).click();
   await page.locator('#drillStartForm input[value="blind"]').check();
   if (await page.locator("#drillCatalogList").isVisible()) throw new Error("盲测时仍显示故障候选列表");
   await page.getByRole("button", { name: "触发这次演练" }).click();
+  await page.waitForFunction(() => !document.querySelector("#drillCheckpoint")?.hidden || !document.querySelector('[data-action="drill-next-human"]')?.disabled);
+  if (!(await page.locator("#drillCheckpoint").isVisible())) await page.getByRole("button", { name: "走到人工节点" }).click();
   await page.locator("#drillCheckpoint:not([hidden])").waitFor();
   if (!(await page.locator("#drillRunName").innerText()).includes("运行中隐藏")) throw new Error("盲测运行中显示了场景名称");
   if (await page.locator("#drillTruth").isVisible()) throw new Error("盲测运行中显示了隐藏答案");
@@ -61,9 +81,11 @@ try {
   await mobile.locator("#drillDialog").waitFor({ state: "visible" });
   const box = await mobile.locator("#drillDialog").boundingBox();
   if (!box || box.width > 390) throw new Error("移动端演练窗口超出视口");
+  await mobile.locator(".drill-history-drawer > summary").click();
   await mobile.locator("[data-drill-run-id]").first().click();
   await mobile.locator("#drillActive:not([hidden])").waitFor();
   await mobile.waitForTimeout(500);
+  await mobile.locator(".drill-detail-drawer").nth(0).locator("summary").click();
   if (!(await mobile.locator("#drillLocation").isVisible())) throw new Error("移动端看不到物理定位卡");
   await mobile.screenshot({ path: "/tmp/idc-ai-ops-drill-mobile.png", fullPage: false });
   await mobile.close();

@@ -17,7 +17,7 @@
       <nav class="rail-actions">
         <button class="rail-button is-active" data-action="show-incidents" type="button">
           <span class="rail-icon" aria-hidden="true">故</span>
-          <span>事件</span>
+          <span>故障中心</span>
         </button>
         <button class="rail-button" data-action="open-ingest" type="button">
           <span class="rail-icon" aria-hidden="true">查</span>
@@ -79,66 +79,90 @@
       </div>
     </aside>
 
-    <aside class="incident-queue" aria-label="故障事件队列">
-      <header class="queue-header">
-        <div>
-          <p class="eyebrow">INCIDENT QUEUE</p>
-          <h1>故障队列</h1>
-        </div>
-        <button class="icon-button" id="refreshButton" type="button" aria-label="刷新事件">↻</button>
-      </header>
-
-      <section class="role-brief" id="roleBrief" aria-live="polite"></section>
-
-      <div class="status-counts" aria-label="事件数量">
-        <button class="count-block is-active" data-filter="all" type="button">
-          <strong id="countAll">0</strong><span>全部</span>
-        </button>
-        <button class="count-block" data-filter="new" type="button">
-          <strong id="countNew">0</strong><span>新发现</span>
-        </button>
-        <button class="count-block" data-filter="processing" type="button">
-          <strong id="countProcessing">0</strong><span>处理中</span>
-        </button>
-        <button class="count-block" data-filter="resolved" type="button">
-          <strong id="countResolved">0</strong><span>已解决</span>
-        </button>
-      </div>
-
-      <label class="queue-search">
-        <span class="sr-only">搜索事件</span>
-        <input id="searchInput" type="search" placeholder="搜索 SN、机架位、设备名">
-        <span aria-hidden="true">⌕</span>
-      </label>
-
-      <div class="queue-list" id="incidentList" aria-live="polite"></div>
-    </aside>
-
-    <main class="workspace" id="workspace" tabindex="-1">
-      <header class="workspace-header">
-        <div>
-          <p class="eyebrow" id="workspaceKicker">INVESTIGATION DESK</p>
-          <p class="workspace-title" id="workspaceTitle">等待事件进入</p>
-        </div>
-        <div class="workspace-actions">
-          <button class="secondary-button" data-action="open-sources" type="button">数据从哪来</button>
-          <button class="primary-button" data-action="open-ingest" type="button">分析真实故障</button>
-          <button class="secondary-button" data-action="open-demos" type="button">查看模拟案例</button>
-        </div>
-      </header>
-      <section id="incidentDetail" class="detail-stage" aria-live="polite">
-        <div class="empty-state">
-          <div class="empty-rack" aria-hidden="true">
-            <span></span><span></span><span></span><span></span><span></span>
+    <main class="incident-center" id="incidentCenter" tabindex="-1">
+      <section class="incident-list-view" id="incidentListView" aria-labelledby="incidentCenterTitle">
+        <header class="center-header">
+          <div class="center-title">
+            <p class="eyebrow">INCIDENT CONTROL</p>
+            <h1 id="incidentCenterTitle">故障中心</h1>
+            <p>先看优先级和下一步，再进入单个事件调查。</p>
           </div>
-          <p class="eyebrow">NO ACTIVE SELECTION</p>
-          <h2>先告诉系统，你现在手里有什么</h2>
-          <p>有日志就上传日志；人在现场就填写看到的异常；已有监控平台也可以自动把真实告警送进来。</p>
-          <div class="empty-actions">
+          <div class="center-actions">
+            <button class="secondary-button refresh-button" id="refreshButton" type="button">刷新事件</button>
             <button class="primary-button" data-action="open-ingest" type="button">分析真实故障</button>
-            <button class="text-button" data-action="open-demos" type="button">先看模拟案例 →</button>
+            <button class="secondary-button" data-action="open-demos" type="button">运行模拟案例</button>
           </div>
+        </header>
+
+        <section class="role-brief" id="roleBrief" aria-live="polite"></section>
+
+        <nav class="queue-lanes" aria-label="故障处理阶段">
+          <button class="queue-lane is-active" data-filter="active" type="button">
+            <strong id="countActive">0</strong><span>进行中</span>
+          </button>
+          <button class="queue-lane" data-filter="new" type="button">
+            <strong id="countNew">0</strong><span>待处理</span>
+          </button>
+          <button class="queue-lane" data-filter="processing" type="button">
+            <strong id="countProcessing">0</strong><span>调查中</span>
+          </button>
+          <button class="queue-lane" data-filter="waiting_human" type="button">
+            <strong id="countWaiting">0</strong><span>等待人工</span>
+          </button>
+          <button class="queue-lane" data-filter="resolved" type="button">
+            <strong id="countResolved">0</strong><span>已恢复</span>
+          </button>
+          <button class="queue-lane simulation-lane" data-filter="simulation" type="button">
+            <strong id="countSimulation">0</strong><span>模拟演练</span>
+          </button>
+        </nav>
+
+        <div class="queue-toolbar" aria-label="筛选故障">
+          <label class="queue-search">
+            <span class="sr-only">搜索事件</span>
+            <input id="searchInput" type="search" placeholder="搜索完整 SN、机架位、设备名或事件编号">
+            <span aria-hidden="true">⌕</span>
+          </label>
+          <label class="queue-select"><span>专业</span><select id="categoryFilter">
+            <option value="all">全部专业</option>
+            <option value="hardware">硬件</option>
+            <option value="network">网络</option>
+            <option value="system">系统</option>
+            <option value="application">应用</option>
+            <option value="facility">动环</option>
+            <option value="unknown">待确认</option>
+          </select></label>
+          <label class="queue-select"><span>级别</span><select id="severityFilter">
+            <option value="all">全部级别</option>
+            <option value="critical">严重</option>
+            <option value="warning">警告</option>
+            <option value="info">信息</option>
+            <option value="unknown">未知</option>
+          </select></label>
+          <button class="text-button clear-filter-button" data-action="clear-incident-filters" type="button">清除筛选</button>
+          <span class="queue-result-count" id="queueResultCount">0 条</span>
         </div>
+
+        <div class="incident-list-columns" aria-hidden="true">
+          <span>故障与当前判断</span><span>设备定位</span><span>责任专业</span><span>下一步</span><span>更新时间</span>
+        </div>
+        <div class="queue-list" id="incidentList" aria-live="polite"></div>
+      </section>
+
+      <section class="incident-detail-view" id="incidentDetailView" aria-labelledby="workspaceTitle" hidden>
+        <header class="workspace-header detail-command-bar">
+          <button class="back-list-button" data-action="show-incidents" type="button"><span aria-hidden="true">←</span> 返回故障列表</button>
+          <div class="detail-command-title">
+            <p class="eyebrow" id="workspaceKicker">INVESTIGATION DESK</p>
+            <p class="workspace-title" id="workspaceTitle">等待事件进入</p>
+          </div>
+          <div class="workspace-actions">
+            <button class="secondary-button compact-nav-button" data-action="previous-incident" type="button">上一条</button>
+            <button class="secondary-button compact-nav-button" data-action="next-incident" type="button">下一条</button>
+            <button class="secondary-button" data-action="open-sources" type="button">查看数据来源</button>
+          </div>
+        </header>
+        <section id="incidentDetail" class="detail-stage" aria-live="polite"></section>
       </section>
     </main>
   </div>
@@ -293,52 +317,53 @@
       </header>
 
       <section class="drill-trust-strip" aria-label="演练可信边界">
-        <article><small>01 答案隔离</small><strong>盲测运行中不可读取</strong><span>结束后才允许发起人或最高管理员揭晓</span></article>
-        <article><small>02 接入一致</small><strong>经过平台接入与治理链</strong><span>不是在页面直接写一个“故障结果”</span></article>
-        <article><small>03 人工责任</small><strong>危险动作不会自动执行</strong><span>AI 给证据与建议，人负责确认和反馈</span></article>
+        <article><strong>盲测答案隔离</strong><span>结束后才能揭晓</span></article>
+        <article><strong>走正式接入链</strong><span>不是页面直接写结果</span></article>
+        <article><strong>危险动作由人决定</strong><span>AI 只提供证据与建议</span></article>
       </section>
+
+      <nav class="drill-category-tabs" id="drillCategoryTabs" aria-label="故障演练分类"></nav>
 
       <div class="drill-shell">
         <aside class="drill-library" aria-labelledby="drillLibraryTitle">
           <div class="drill-section-heading">
-            <div><p class="eyebrow">FAULT LIBRARY</p><h3 id="drillLibraryTitle">选择要触发的故障</h3></div>
+            <div><p class="eyebrow">FAULT LIBRARY</p><h3 id="drillLibraryTitle">选择具体故障</h3></div>
             <span id="drillCatalogCount" class="drill-count">0 项</span>
           </div>
-          <form id="drillStartForm" class="drill-start-form">
-            <fieldset>
-              <legend>演练方式</legend>
-              <label><input name="mode" type="radio" value="directed" checked> 定向演练 <span>知道题目，适合演示</span></label>
-              <label><input name="mode" type="radio" value="blind"> 盲测 <span>只看现象，不看答案</span></label>
-            </fieldset>
-            <label>故障分类
-              <select id="drillCategorySelect" name="category"></select>
-            </label>
-            <label id="drillScenarioField">具体场景
-              <select id="drillScenarioSelect" name="scenario_id" required></select>
-            </label>
-            <label>推进方式
-              <select name="playback_mode">
-                <option value="auto">自动走到人工节点</option>
-                <option value="step">每次只走一步</option>
-                <option value="next_human">跳到下一个人工节点</option>
-              </select>
-            </label>
-            <p class="drill-form-note" id="drillModeNote">定向演练会显示故障名称；运行过程仍由真实模拟信号触发。</p>
-            <button class="primary-button" type="submit">触发这次演练</button>
-          </form>
-          <div class="drill-catalog-list" id="drillCatalogList" aria-live="polite"></div>
-          <section class="drill-history" aria-labelledby="drillHistoryTitle">
-            <header><h3 id="drillHistoryTitle">最近演练</h3><button class="text-button" data-action="refresh-drills" type="button">刷新</button></header>
-            <div id="drillRunList"></div>
+          <section class="drill-load-state" id="drillLoadState" aria-live="polite">
+            <strong>正在读取故障演练库</strong>
+            <span>正在获取分类、场景和最近演练记录…</span>
           </section>
+          <div class="drill-catalog-list" id="drillCatalogList" aria-live="polite" hidden></div>
         </aside>
 
         <main class="drill-console" aria-live="polite">
           <section class="drill-empty" id="drillEmptyState">
-            <div class="drill-empty-pulse" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
-            <p class="eyebrow">READY FOR INJECTION</p>
-            <h3>先从左侧触发一个故障</h3>
-            <p>系统会逐条生成平台信号，并把每次接收、治理、关联、人工检查和恢复验证记录到这里。</p>
+            <div class="drill-selected-summary">
+              <div>
+                <p class="eyebrow">SELECTED SCENARIO</p>
+                <h3 id="drillSelectedName">选择左侧故障场景</h3>
+                <p id="drillSelectedSymptom">场景加载后会在这里显示可见现象、责任组和信号来源。</p>
+                <div class="drill-selected-meta" id="drillSelectedMeta"></div>
+              </div>
+              <form id="drillStartForm" class="drill-start-form">
+                <input id="drillCategorySelect" name="category" type="hidden">
+                <input id="drillScenarioSelect" name="scenario_id" type="hidden" required>
+                <fieldset>
+                  <legend>演练方式</legend>
+                  <label><input name="mode" type="radio" value="directed" checked> 定向演练</label>
+                  <label><input name="mode" type="radio" value="blind"> 盲测</label>
+                </fieldset>
+                <fieldset>
+                  <legend>推进方式</legend>
+                  <label><input name="playback_mode" type="radio" value="step" checked> 每次只走一步</label>
+                  <label><input name="playback_mode" type="radio" value="auto"> 自动到人工节点</label>
+                  <label><input name="playback_mode" type="radio" value="next_human"> 下一个人工节点</label>
+                </fieldset>
+                <p class="drill-form-note" id="drillModeNote">定向演练会显示故障名称；运行过程仍由真实模拟信号触发。</p>
+                <button class="primary-button" type="submit" disabled>触发这次演练</button>
+              </form>
+            </div>
           </section>
 
           <div id="drillActive" hidden>
@@ -349,31 +374,16 @@
                 <p id="drillRunSymptom">—</p>
               </div>
               <div class="drill-run-controls">
+                <button class="secondary-button" data-action="new-drill" type="button">新的演练</button>
                 <button class="secondary-button" data-action="drill-step" type="button">推进一步</button>
                 <button class="secondary-button" data-action="drill-next-human" type="button">走到人工节点</button>
                 <button class="danger-button" data-action="terminate-drill" type="button">终止演练</button>
               </div>
             </header>
 
-            <section class="drill-overview-grid">
-              <article class="physical-locator" aria-labelledby="drillLocatorTitle">
-                <p class="eyebrow">PHYSICAL LOCATOR</p><h3 id="drillLocatorTitle">物理定位卡</h3>
-                <dl id="drillLocation"></dl>
-                <p>这些身份来自场景/资产字段，不由大模型猜测。</p>
-              </article>
-              <article class="impact-card" aria-labelledby="drillImpactTitle">
-                <p class="eyebrow">CURRENT IMPACT PATH</p><h3 id="drillImpactTitle">当前影响路径</h3>
-                <div class="impact-path" id="drillImpactPath"></div>
-                <p id="drillImpactKind">—</p>
-              </article>
-            </section>
-
-            <section class="drill-flight-recorder" aria-labelledby="drillTimelineTitle">
-              <header>
-                <div><p class="eyebrow">AUDITABLE SIGNAL CHAIN</p><h3 id="drillTimelineTitle">系统如何一步步得到结果</h3></div>
-                <div><span id="drillLogicalTime">T+0s</span><span id="drillIncidentCount">0 个事故</span></div>
-              </header>
-              <ol class="drill-timeline" id="drillStepList"></ol>
+            <section class="drill-progress-board" aria-label="本次演练进度">
+              <header><div><p class="eyebrow">CURRENT RUN</p><h3>本次演练进度</h3></div><div><span id="drillLogicalTime">T+0s</span><span id="drillIncidentCount">0 个事故</span></div></header>
+              <ol class="drill-stage-track" id="drillStageTrack"></ol>
             </section>
 
             <section class="drill-checkpoint" id="drillCheckpoint" hidden aria-labelledby="drillCheckpointTitle">
@@ -389,6 +399,30 @@
               </form>
             </section>
 
+            <details class="drill-detail-drawer">
+              <summary>设备定位与影响路径</summary>
+              <section class="drill-overview-grid">
+                <article class="physical-locator" aria-labelledby="drillLocatorTitle">
+                  <p class="eyebrow">PHYSICAL LOCATOR</p><h3 id="drillLocatorTitle">物理定位卡</h3>
+                  <dl id="drillLocation"></dl>
+                  <p>这些身份来自场景/资产字段，不由大模型猜测。</p>
+                </article>
+                <article class="impact-card" aria-labelledby="drillImpactTitle">
+                  <p class="eyebrow">CURRENT IMPACT PATH</p><h3 id="drillImpactTitle">当前影响路径</h3>
+                  <div class="impact-path" id="drillImpactPath"></div>
+                  <p id="drillImpactKind">—</p>
+                </article>
+              </section>
+            </details>
+
+            <details class="drill-detail-drawer">
+              <summary>完整 AI 推导与模拟信号</summary>
+              <section class="drill-flight-recorder" aria-labelledby="drillTimelineTitle">
+                <header><div><p class="eyebrow">AUDITABLE SIGNAL CHAIN</p><h3 id="drillTimelineTitle">系统如何一步步得到结果</h3></div></header>
+                <ol class="drill-timeline" id="drillStepList"></ol>
+              </section>
+            </details>
+
             <section class="drill-result" id="drillResult" hidden aria-labelledby="drillResultTitle">
               <div><p class="eyebrow">DRILL RESULT</p><h3 id="drillResultTitle">演练结果</h3><p id="drillResultSummary"></p></div>
               <dl id="drillScore"></dl>
@@ -396,6 +430,11 @@
               <article id="drillTruth" hidden></article>
             </section>
           </div>
+
+          <details class="drill-detail-drawer drill-history-drawer">
+            <summary><span>最近演练</span><button class="text-button" data-action="refresh-drills" type="button">刷新</button></summary>
+            <div id="drillRunList"></div>
+          </details>
         </main>
       </div>
     </div>

@@ -4,8 +4,13 @@ const state = {
   selected: null,
   sources: [],
   facilities: [],
-  filter: "all",
+  filter: "active",
   query: "",
+  categoryFilter: "all",
+  severityFilter: "all",
+  view: "list",
+  detailTab: "overview",
+  listScrollTop: 0,
   role: localStorage.getItem("idcai-role") || "ai_admin",
   actor: localStorage.getItem("idcai-actor") || "local-admin",
   operations: [],
@@ -22,6 +27,8 @@ const state = {
   },
   drills: {
     catalog: null,
+    loadStatus: "idle",
+    loadError: "",
     category: "network",
     selectedScenarioId: "net-optical-module",
     runs: [],
@@ -159,10 +166,48 @@ function primaryIdentity(incident) {
   return device.sn || device.name || device.rack_position || "设备身份待补充";
 }
 
+function isSimulationIncident(incident = {}) {
+  return Boolean(incident.simulation || incident.investigation?.simulation || (incident.inputs || []).some((item) => item.simulation));
+}
+
+function isWaitingForHuman(incident = {}) {
+  if (incident.status === "resolved") return false;
+  const card = incident.onsite_card || {};
+  const nextStep = incident.investigation?.conclusion?.next_step || "";
+  return Boolean(
+    (card.required && ["confirm", "stop"].includes(card.power?.gate))
+    || /等待人工|等待现场|等待.{0,8}确认|许可|复核|完整\s*SN/i.test(nextStep)
+  );
+}
+
+function incidentLane(incident = {}) {
+  if (isSimulationIncident(incident)) return "simulation";
+  if (incident.status === "resolved") return "resolved";
+  if (incident.status === "new") return "new";
+  if (isWaitingForHuman(incident)) return "waiting_human";
+  return "processing";
+}
+
+function incidentNextAction(incident = {}) {
+  if (incident.status === "resolved") return "查看恢复验证和处理记录";
+  if (isWaitingForHuman(incident)) {
+    return incident.onsite_card?.power?.message
+      || incident.investigation?.conclusion?.next_step
+      || "等待人工确认后继续";
+  }
+  return incident.investigation?.conclusion?.next_step
+    || (incident.status === "new" ? "等待认领并开始调查" : "继续补充只读证据");
+}
+
 function filteredIncidents() {
   const query = state.query.trim().toLowerCase();
   return state.incidents.filter((incident) => {
-    if (state.filter !== "all" && incident.status !== state.filter) return false;
+    const lane = incidentLane(incident);
+    if (state.filter === "active") {
+      if (!["new", "processing", "waiting_human"].includes(lane)) return false;
+    } else if (lane !== state.filter) return false;
+    if (state.categoryFilter !== "all" && incident.category !== state.categoryFilter) return false;
+    if (state.severityFilter !== "all" && incident.severity !== state.severityFilter) return false;
     if (!query) return true;
     const searchable = [
       incident.id,
@@ -180,46 +225,67 @@ function filteredIncidents() {
   });
 }
 
-function renderCounts(counts = {}) {
-  const all = (counts.new || 0) + (counts.processing || 0) + (counts.resolved || 0);
-  document.querySelector("#countAll").textContent = all;
-  document.querySelector("#countNew").textContent = counts.new || 0;
-  document.querySelector("#countProcessing").textContent = counts.processing || 0;
-  document.querySelector("#countResolved").textContent = counts.resolved || 0;
+function renderCounts() {
+  const counts = { active: 0, new: 0, processing: 0, waiting_human: 0, resolved: 0, simulation: 0 };
+  state.incidents.forEach((incident) => {
+    const lane = incidentLane(incident);
+    counts[lane] += 1;
+    if (["new", "processing", "waiting_human"].includes(lane)) counts.active += 1;
+  });
+  document.querySelector("#countActive").textContent = counts.active;
+  document.querySelector("#countNew").textContent = counts.new;
+  document.querySelector("#countProcessing").textContent = counts.processing;
+  document.querySelector("#countWaiting").textContent = counts.waiting_human;
+  document.querySelector("#countResolved").textContent = counts.resolved;
+  document.querySelector("#countSimulation").textContent = counts.simulation;
 }
 
 function renderList() {
   const items = filteredIncidents();
+  document.querySelector("#queueResultCount").textContent = `${items.length} 条`;
   if (!items.length) {
-    listEl.innerHTML = `<div class="list-empty">当前筛选下没有事件。<br>可以分析真实故障或查看模拟案例。</div>`;
+    const message = state.filter === "simulation"
+      ? "当前没有模拟事件。可以从故障演练或模拟案例开始一次测试。"
+      : "当前筛选下没有真实故障。可以清除筛选或分析新的故障信息。";
+    listEl.innerHTML = `<div class="list-empty"><strong>没有符合条件的事件</strong><span>${escapeHtml(message)}</span><button class="text-button" data-action="clear-incident-filters" type="button">清除筛选</button></div>`;
     return;
   }
   listEl.innerHTML = items.map((incident) => {
     const device = incident.devices?.[0] || {};
     const position = device.rack_position || "位置待补充";
+    const lane = incidentLane(incident);
+    const simulation = lane === "simulation";
     return `
       <button class="incident-row ${incident.id === state.selectedId ? "is-selected" : ""}"
-        data-incident-id="${escapeHtml(incident.id)}" data-severity="${escapeHtml(incident.severity)}" type="button">
-        <div class="row-meta">
-          <span class="row-site">${escapeHtml(incident.site || "SITE?")}</span>
-          <span class="row-time">${escapeHtml(formatTime(incident.updated_at))}</span>
+        data-incident-id="${escapeHtml(incident.id)}" data-severity="${escapeHtml(incident.severity)}" data-lane="${escapeHtml(lane)}" type="button"
+        aria-label="打开故障 ${escapeHtml(incident.title)}">
+        <span class="incident-state-track" aria-hidden="true"><i></i><i></i><i></i></span>
+        <div class="row-incident">
+          <div class="row-meta"><span class="row-id">${escapeHtml(incident.id)}</span>${simulation ? `<span class="row-simulation">模拟</span>` : ""}</div>
+          <h3>${escapeHtml(incident.title)}</h3>
+          <p>${escapeHtml(incident.summary || "尚未形成摘要")}</p>
         </div>
-        <h3>${escapeHtml(incident.title)}</h3>
-        <p class="row-device">${escapeHtml(primaryIdentity(incident))}<br>${escapeHtml(position)}</p>
-        <div class="row-footer">
-          <span>${escapeHtml(translated("category", incident.category))} · ${incident.affected_count || 0}台</span>
-          <span class="row-status">${escapeHtml(translated("status", incident.status))}</span>
+        <div class="row-field row-device"><small>设备定位</small><strong>${escapeHtml(primaryIdentity(incident))}</strong><span>${escapeHtml(position)}</span></div>
+        <div class="row-field row-owner"><small>责任专业</small><strong>${escapeHtml(translated("category", incident.category))}</strong><span>${escapeHtml(incident.site || "机房待确认")} · ${incident.affected_count || 0} 台</span></div>
+        <div class="row-field row-next"><small>下一步</small><strong>${escapeHtml(incidentNextAction(incident))}</strong><span>${escapeHtml(lane === "waiting_human" ? "等待人工" : translated("status", incident.status))}</span></div>
+        <div class="row-updated">
+          <time>${escapeHtml(formatTime(incident.updated_at))}</time>
+          <span class="row-status">${escapeHtml({ active: "进行中", new: "待处理", processing: "调查中", waiting_human: "等人工", resolved: "已恢复", simulation: "模拟" }[lane] || translated("status", incident.status))}</span>
+          <b aria-hidden="true">→</b>
         </div>
       </button>`;
   }).join("");
+  window.requestAnimationFrame(() => { listEl.scrollTop = state.listScrollTop; });
 }
 
-function identityStrip(device) {
+function identityStrip(device, incident = null) {
   return `
     <div class="identity-strip">
       <div class="identity-field"><small>完整 SN</small><strong>${escapeHtml(device.sn || "待补充")}</strong></div>
       <div class="identity-field"><small>机架位</small><strong>${escapeHtml(device.rack_position || "待补充")}</strong></div>
       <div class="identity-field"><small>设备名</small><strong>${escapeHtml(device.name || "待补充")}</strong></div>
+      ${incident ? `<div class="identity-field"><small>责任专业</small><strong>${escapeHtml(translated("category", incident.category))}</strong></div>
+      <div class="identity-field"><small>当前状态</small><strong>${escapeHtml(incidentLane(incident) === "waiting_human" ? "等待人工" : translated("status", incident.status))}</strong></div>` : ""}
     </div>`;
 }
 
@@ -573,99 +639,231 @@ function facilityAssessmentCard(assessment = {}) {
     </section>`;
 }
 
+function defaultDetailTabForRole(role) {
+  if (["ai_admin", "super_admin"].includes(role)) return "evidence";
+  if (role === "facility_lead") return "collaboration";
+  return "overview";
+}
+
+function compactEvidencePanel(investigation = {}) {
+  const evidence = (investigation.evidence || []).slice(0, 3);
+  const total = (investigation.evidence || []).length;
+  return `<section class="workbench-card evidence-glance">
+    <header><div><small>关键证据</small><strong>${escapeHtml(total)} 条已登记</strong></div><button class="text-button" data-detail-tab="evidence" type="button">查看全部</button></header>
+    <ol>${evidence.map((item, index) => `<li><span>${String(index + 1).padStart(2, "0")}</span><p>${escapeHtml(item.text)}</p></li>`).join("") || `<li class="is-empty"><p>当前还没有可核对证据，不能给出确定结论。</p></li>`}</ol>
+  </section>`;
+}
+
+function compactCollaborationPanel(incident = {}) {
+  const card = incident.onsite_card || {};
+  const device = card.device || incident.devices?.[0] || {};
+  const identityReady = Boolean(device.sn && device.rack_position);
+  const gate = card.power?.gate || "confirm";
+  const gateText = gate === "ready" ? "操作许可已满足" : gate === "stop" ? "当前禁止操作" : "操作许可待确认";
+  const gateState = gate === "ready" ? "done" : "waiting";
+  return `<section class="workbench-card collaboration-glance">
+    <header><div><small>协同与责任</small><strong>${escapeHtml(incidentLane(incident) === "waiting_human" ? "等待人工反馈" : "按当前阶段推进")}</strong></div><button class="text-button" data-detail-tab="collaboration" type="button">查看沟通</button></header>
+    <ol>
+      <li data-state="${identityReady ? "done" : "waiting"}"><i></i><span>${identityReady ? "完整 SN 与机架位已具备" : "设备身份仍需补齐"}</span></li>
+      <li data-state="${gateState}"><i></i><span>${escapeHtml(gateText)}</span></li>
+      <li data-state="${incident.status === "resolved" ? "done" : "waiting"}"><i></i><span>${incident.status === "resolved" ? "恢复结果已记录" : "等待处置结果与恢复验证"}</span></li>
+    </ol>
+  </section>`;
+}
+
+function incidentStatusTrack(incident) {
+  const lane = incidentLane(incident);
+  const current = { new: 0, processing: 1, waiting_human: 2, resolved: 3, simulation: incident.status === "resolved" ? 3 : 1 }[lane] ?? 0;
+  const steps = [
+    ["已接收", "原始信号已保存"],
+    ["调查", "规则、知识与只读查询"],
+    ["人工", "许可、复核或现场操作"],
+    ["恢复", "监控、业务与人工确认"],
+  ];
+  return `<ol class="incident-status-track" aria-label="故障处理进度">${steps.map(([label, note], index) => {
+    const stepState = index < current ? "done" : index === current ? "current" : "upcoming";
+    return `<li data-state="${stepState}"><span>${String(index + 1).padStart(2, "0")}</span><div><strong>${label}</strong><small>${note}</small></div></li>`;
+  }).join("")}</ol>`;
+}
+
 function renderDetail(incident) {
   if (!incident) return;
   const investigation = incident.investigation || {};
   const conclusion = investigation.conclusion || {};
   const device = incident.devices?.[0] || {};
   const moreDevices = (incident.devices || []).slice(1);
+  const activeTab = ["overview", "evidence", "collaboration", "raw", "audit"].includes(state.detailTab)
+    ? state.detailTab
+    : defaultDetailTabForRole(state.role);
+  state.detailTab = activeTab;
   document.querySelector("#workspaceKicker").textContent = incident.id;
   document.querySelector("#workspaceTitle").textContent = `${incident.site || "机房待确认"} · ${incident.title}`;
   detailEl.innerHTML = `
     <article class="incident-layout">
-      <header class="incident-heading">
-        <div>
-          <p class="eyebrow">AUDITABLE INCIDENT INVESTIGATION</p>
-          <h2>${escapeHtml(incident.title)}</h2>
-          <p class="incident-summary">${escapeHtml(incident.summary)}</p>
+      <div class="incident-fixed-summary">
+        <header class="incident-heading">
+          <div>
+            <p class="eyebrow">AUDITABLE INCIDENT</p>
+            <h2>${escapeHtml(incident.title)}</h2>
+            <p class="incident-summary">${escapeHtml(incident.summary)}</p>
+          </div>
+          <div class="incident-tags">
+            ${isSimulationIncident(incident) ? `<span class="simulation-badge">模拟事件</span>` : ""}
+            <span class="severity-chip" data-value="${escapeHtml(incident.severity)}">${escapeHtml(translated("severity", incident.severity))}</span>
+            <span class="category-chip">${escapeHtml(translated("category", incident.category))}</span>
+            <span class="status-chip">${escapeHtml(translated("status", incident.status))}</span>
+          </div>
+        </header>
+
+        ${identityStrip(device, incident)}
+        <div class="incident-workbench-grid">
+          <section class="workbench-card judgment-glance" data-grade="${escapeHtml(conclusion.grade)}">
+            <header><div><small>AI 当前判断</small><strong>${escapeHtml(statusLabel(conclusion.grade))}</strong></div><span>${escapeHtml(modeLabel(investigation.mode))}</span></header>
+            <h3>${escapeHtml(conclusion.leading_hypothesis || "证据不足")}</h3>
+            <p>${escapeHtml(conclusion.uncertainty || "尚未说明不确定性")}</p>
+            <div class="field-next-action"><small>现场下一步</small><strong>${escapeHtml(conclusion.next_step || incidentNextAction(incident))}</strong><span>只读优先；高风险动作必须由人确认</span></div>
+          </section>
+          ${compactEvidencePanel(investigation)}
+          ${compactCollaborationPanel(incident)}
         </div>
-        <div class="incident-tags">
-          <span class="severity-chip" data-value="${escapeHtml(incident.severity)}">${escapeHtml(translated("severity", incident.severity))}</span>
-          <span class="category-chip">${escapeHtml(translated("category", incident.category))}</span>
-          <span class="status-chip">${escapeHtml(translated("status", incident.status))}</span>
-        </div>
-      </header>
+      </div>
 
-      ${identityStrip(device)}
-      ${moreDevices.length ? `<p class="multi-device-note">事件中还有 ${moreDevices.length} 台设备：${moreDevices.map((item) => escapeHtml(item.sn || item.name || item.rack_position)).join("、")}。这不代表系统已经证明它们具有相同根因，请查看下方“事件关联”。</p>` : ""}
+      <nav class="detail-tabs" role="tablist" aria-label="故障详情分区">
+        <button role="tab" data-detail-tab="overview" aria-selected="${activeTab === "overview"}" class="${activeTab === "overview" ? "is-active" : ""}" type="button">处置步骤</button>
+        <button role="tab" data-detail-tab="evidence" aria-selected="${activeTab === "evidence"}" class="${activeTab === "evidence" ? "is-active" : ""}" type="button">AI 分析与证据</button>
+        <button role="tab" data-detail-tab="collaboration" aria-selected="${activeTab === "collaboration"}" class="${activeTab === "collaboration" ? "is-active" : ""}" type="button">沟通记录</button>
+        <button role="tab" data-detail-tab="raw" aria-selected="${activeTab === "raw"}" class="${activeTab === "raw" ? "is-active" : ""}" type="button">原始日志</button>
+        <button role="tab" data-detail-tab="audit" aria-selected="${activeTab === "audit"}" class="${activeTab === "audit" ? "is-active" : ""}" type="button">审计记录</button>
+      </nav>
 
-      ${dataPath(investigation, incident)}
+      <div class="detail-tab-scroll">
+        <section class="detail-panel" role="tabpanel" data-detail-panel="overview" ${activeTab === "overview" ? "" : "hidden"}>
+          ${moreDevices.length ? `<p class="multi-device-note">事件还关联 ${moreDevices.length} 台设备：${moreDevices.map((item) => escapeHtml(item.sn || item.name || item.rack_position)).join("、")}。关联不等于已经证明共同根因。</p>` : ""}
+          <div class="collaboration-grid">
+            <div class="detail-column">${onsiteCard(incident.onsite_card)}</div>
+            <div class="detail-column">
+              ${incidentStatusTrack(incident)}
+              <section class="section-block">
+                <div class="section-heading"><h3>事件处理状态</h3><small>${escapeHtml(formatTime(incident.updated_at))}</small></div>
+                <div class="status-actions">
+                  <button class="secondary-button" data-status="new" ${incident.status === "new" ? "disabled" : ""} type="button">退回待处理</button>
+                  <button class="secondary-button" data-status="processing" ${incident.status === "processing" ? "disabled" : ""} type="button">开始处理</button>
+                  <button class="primary-button" data-status="resolved" ${incident.status === "resolved" ? "disabled" : ""} type="button">标记已恢复</button>
+                </div>
+              </section>
+              <section class="section-block operation-entry-card">
+                <div class="section-heading"><h3>现场操作闭环</h3><small>OMS 工单与双岗/远程复核</small></div>
+                <button class="primary-button" data-action="open-operations" type="button">进入现场操作</button>
+              </section>
+            </div>
+          </div>
+          ${facilityAssessmentCard(incident.analysis?.facility_assessment)}
+          ${incident.cc_reminder?.required ? `
+            <aside class="cc-alert" role="alert">
+              <span class="cc-mark">CC</span>
+              <div><strong>${escapeHtml(incident.cc_reminder.message)}</strong><p>${escapeHtml(incident.cc_reminder.reason || "输入已明确标记需要通报")}</p></div>
+            </aside>` : ""}
+        </section>
 
-      <aside class="capability-banner" data-mode="${escapeHtml(investigation.mode)}">
-        <div class="capability-mode"><span>当前分析模式</span><strong>${escapeHtml(modeLabel(investigation.mode))}</strong></div>
-        <p>${escapeHtml(investigation.capability_notice || "当前能力状态未知")}</p>
-        ${investigation.simulation ? `<span class="simulation-badge">模拟数据 · 不代表真实设备状态</span>` : `<span class="live-input-badge">外部/人工输入 · 尚未独立核验</span>`}
-      </aside>
-
-      ${facilityAssessmentCard(incident.analysis?.facility_assessment)}
-
-      ${incident.cc_reminder?.required ? `
-        <aside class="cc-alert" role="alert">
-          <span class="cc-mark">CC</span>
-          <div><strong>${escapeHtml(incident.cc_reminder.message)}</strong><p>${escapeHtml(incident.cc_reminder.reason || "输入已明确标记需要通报")}</p></div>
-        </aside>` : ""}
-
-      <section class="conclusion-board" data-grade="${escapeHtml(conclusion.grade)}">
-        <div class="conclusion-grade"><small>当前结论等级</small><strong>${escapeHtml(statusLabel(conclusion.grade))}</strong></div>
-        <div class="conclusion-main"><small>目前最需要验证的候选</small><h3>${escapeHtml(conclusion.leading_hypothesis || "证据不足")}</h3><p>${escapeHtml(conclusion.uncertainty || "尚未说明不确定性")}</p></div>
-        <div class="next-check"><small>下一项建议检查</small><strong>${escapeHtml(conclusion.next_step || "补充更多证据")}</strong><span>只读优先 · 结果回来后重新排序候选</span></div>
-      </section>
-
-      <section class="investigation-section">
-        <div class="section-heading investigation-heading"><div><p class="eyebrow">EVIDENCE ROUTE</p><h3>数据怎样一步步变成当前判断</h3></div><small>点击每一步查看原文、依据和限制</small></div>
-        ${traceLine(investigation)}
-      </section>
-
-      <div class="detail-grid lower-grid">
-        <div class="detail-column">
-          <section class="section-block">
-            <div class="section-heading"><h3>原始证据</h3><small>${(investigation.evidence || []).length} 条</small></div>
+        <section class="detail-panel" role="tabpanel" data-detail-panel="evidence" ${activeTab === "evidence" ? "" : "hidden"}>
+          <section class="investigation-section">
+            <div class="section-heading investigation-heading"><div><p class="eyebrow">EVIDENCE ROUTE</p><h3>系统如何一步步得到当前判断</h3></div><small>展开步骤查看原文、依据、工具结果和限制</small></div>
+            ${traceLine(investigation)}
+          </section>
+          <section class="section-block evidence-register">
+            <div class="section-heading"><h3>证据登记</h3><small>${(investigation.evidence || []).length} 条</small></div>
             ${evidenceList(investigation.evidence)}
           </section>
+        </section>
+
+        <section class="detail-panel" role="tabpanel" data-detail-panel="collaboration" ${activeTab === "collaboration" ? "" : "hidden"}>
           <section class="section-block">
             <div class="section-heading"><h3>接口沟通摘要</h3><small>只使用已保存结果</small></div>
             <div class="communication-box" id="communicationText">${escapeHtml(incident.communication_text)}</div>
-            <div class="copy-row"><button class="secondary-button" data-action="copy-summary" type="button">复制摘要</button></div>
+            <div class="copy-row"><button class="secondary-button" data-action="copy-summary" type="button">复制沟通摘要</button></div>
           </section>
-        </div>
-        <div class="detail-column">
-          ${onsiteCard(incident.onsite_card)}
-          <section class="section-block">
-            <div class="section-heading"><h3>处理状态</h3><small>${escapeHtml(formatTime(incident.updated_at))}</small></div>
-            <div class="status-actions">
-              <button class="secondary-button" data-status="new" ${incident.status === "new" ? "disabled" : ""} type="button">新发现</button>
-              <button class="secondary-button" data-status="processing" ${incident.status === "processing" ? "disabled" : ""} type="button">开始处理</button>
-              <button class="primary-button" data-status="resolved" ${incident.status === "resolved" ? "disabled" : ""} type="button">标记解决</button>
-            </div>
-          </section>
-          <section class="section-block">
-            <div class="section-heading"><h3>调查输入</h3><small>${(investigation.intake || []).length} 次输入</small></div>
+        </section>
+
+        <section class="detail-panel" role="tabpanel" data-detail-panel="raw" ${activeTab === "raw" ? "" : "hidden"}>
+          <section class="section-block raw-records-panel">
+            <div class="section-heading"><div><p class="eyebrow">SOURCE RECORDS</p><h3>原始日志与调查输入</h3></div><small>${(investigation.intake || []).length} 次输入</small></div>
+            <p class="raw-records-note">默认展示来源、时间和摘要；需要核对时再展开原文。原始记录不会因为结论变化而被覆盖。</p>
             ${intakeList(investigation.intake)}
           </section>
-        </div>
+        </section>
+
+        <section class="detail-panel" role="tabpanel" data-detail-panel="audit" ${activeTab === "audit" ? "" : "hidden"}>
+          ${dataPath(investigation, incident)}
+          <aside class="capability-banner" data-mode="${escapeHtml(investigation.mode)}">
+            <div class="capability-mode"><span>当前分析模式</span><strong>${escapeHtml(modeLabel(investigation.mode))}</strong></div>
+            <p>${escapeHtml(investigation.capability_notice || "当前能力状态未知")}</p>
+            ${investigation.simulation ? `<span class="simulation-badge">模拟数据 · 不代表真实设备状态</span>` : `<span class="live-input-badge">外部/人工输入 · 尚未独立核验</span>`}
+          </aside>
+        </section>
       </div>
     </article>`;
 }
 
-async function loadIncidents(preferredId = null) {
+function activateDetailTab(name, focus = false) {
+  if (!["overview", "evidence", "collaboration", "raw", "audit"].includes(name)) return;
+  state.detailTab = name;
+  document.querySelectorAll("[data-detail-tab]").forEach((button) => {
+    const active = button.dataset.detailTab === name;
+    button.classList.toggle("is-active", active);
+    button.setAttribute("aria-selected", String(active));
+    if (active && focus) button.focus();
+  });
+  document.querySelectorAll("[data-detail-panel]").forEach((panel) => {
+    panel.hidden = panel.dataset.detailPanel !== name;
+  });
+  document.querySelector(".detail-tab-scroll")?.scrollTo({ top: 0, behavior: "auto" });
+}
+
+function historyUrlFor(view, incidentId = null) {
+  if (view === "detail" && incidentId) return `#incident=${encodeURIComponent(incidentId)}`;
+  return "#incidents";
+}
+
+function showIncidentList(pushHistory = true) {
+  state.view = "list";
+  document.body.dataset.incidentView = "list";
+  document.querySelector("#incidentListView").hidden = false;
+  document.querySelector("#incidentDetailView").hidden = true;
+  document.querySelectorAll('.rail-button[data-action="show-incidents"]').forEach((button) => button.classList.add("is-active"));
+  if (pushHistory && window.location.hash !== "#incidents") {
+    window.history.pushState({ view: "list" }, "", historyUrlFor("list"));
+  }
+  window.requestAnimationFrame(() => {
+    listEl.scrollTop = state.listScrollTop;
+    if (state.selectedId) {
+      document.querySelector(`[data-incident-id="${CSS.escape(state.selectedId)}"]`)?.focus({ preventScroll: true });
+    }
+  });
+}
+
+function showIncidentDetail(pushHistory = true) {
+  if (!state.selectedId) return;
+  state.view = "detail";
+  document.body.dataset.incidentView = "detail";
+  document.querySelector("#incidentListView").hidden = true;
+  document.querySelector("#incidentDetailView").hidden = false;
+  if (pushHistory && window.location.hash !== historyUrlFor("detail", state.selectedId)) {
+    window.history.pushState({ view: "detail", incidentId: state.selectedId }, "", historyUrlFor("detail", state.selectedId));
+  }
+  window.requestAnimationFrame(() => document.querySelector(".back-list-button")?.focus({ preventScroll: true }));
+}
+
+async function loadIncidents(preferredId = null, pushSelectionHistory = true) {
   try {
     const payload = await api("/api/incidents");
     state.incidents = payload.items || [];
-    renderCounts(payload.counts);
-    const targetId = preferredId || state.selectedId || state.incidents[0]?.id;
+    renderCounts();
     renderList();
+    const targetId = preferredId || (state.view === "detail" ? state.selectedId : null);
     if (targetId && state.incidents.some((item) => item.id === targetId)) {
-      await selectIncident(targetId, false);
+      await selectIncident(targetId, false, pushSelectionHistory);
+    } else {
+      showIncidentList(false);
     }
   } catch (error) {
     document.querySelector("#systemPulse").classList.add("is-offline");
@@ -673,15 +871,32 @@ async function loadIncidents(preferredId = null) {
   }
 }
 
-async function selectIncident(incidentId, rerenderList = true) {
+async function selectIncident(incidentId, rerenderList = true, pushHistory = true) {
   try {
+    if (state.view === "list") state.listScrollTop = listEl.scrollTop;
     state.selectedId = incidentId;
     state.selected = await api(`/api/incidents/${encodeURIComponent(incidentId)}`);
     if (rerenderList) renderList();
     renderDetail(state.selected);
+    showIncidentDetail(pushHistory);
   } catch (error) {
     showToast(error.message, true);
   }
+}
+
+async function selectAdjacentIncident(offset) {
+  const items = filteredIncidents();
+  const currentIndex = items.findIndex((item) => item.id === state.selectedId);
+  if (!items.length || currentIndex < 0) {
+    showToast("当前筛选中没有可切换的事件", true);
+    return;
+  }
+  const nextIndex = currentIndex + offset;
+  if (nextIndex < 0 || nextIndex >= items.length) {
+    showToast(offset < 0 ? "已经是当前筛选的第一条" : "已经是当前筛选的最后一条");
+    return;
+  }
+  await selectIncident(items[nextIndex].id, true, true);
 }
 
 async function updateStatus(status) {
@@ -848,6 +1063,7 @@ function renderRoleBrief() {
 
 function setRole(role, preserveActor = false) {
   state.role = roleNames[role] ? role : "onsite_operator";
+  state.detailTab = defaultDetailTabForRole(state.role);
   if (!preserveActor) state.actor = defaultActorForRole(state.role);
   localStorage.setItem("idcai-role", state.role);
   localStorage.setItem("idcai-actor", state.actor);
@@ -868,7 +1084,7 @@ function setRole(role, preserveActor = false) {
   applyGovernancePermissions();
   renderRoleBrief();
   showToast(`已切换到${roleNames[state.role]}工作台，当前账号 ${state.actor}`);
-  if (state.incidents.length) loadIncidents(state.selectedId).catch((error) => showToast(error.message, true));
+  if (state.incidents.length) loadIncidents(state.view === "detail" ? state.selectedId : null, false).catch((error) => showToast(error.message, true));
   if (governanceDialog.open) loadGovernance().catch((error) => showToast(error.message, true));
   if (!isAdmin && drillDialog.open) closeDialog(drillDialog);
 }
@@ -1661,17 +1877,47 @@ function drillCategoryName(id) {
   return state.drills.catalog?.categories?.find((item) => item.id === id)?.name || id;
 }
 
+function selectedDrillScenario() {
+  return state.drills.catalog?.items?.find((item) => item.id === state.drills.selectedScenarioId) || null;
+}
+
+function renderDrillLoadState() {
+  const target = document.querySelector("#drillLoadState");
+  const catalogList = document.querySelector("#drillCatalogList");
+  const tabs = document.querySelector("#drillCategoryTabs");
+  if (state.drills.loadStatus === "ready") {
+    target.hidden = true;
+    catalogList.hidden = false;
+    tabs.hidden = false;
+    return;
+  }
+  catalogList.hidden = true;
+  tabs.hidden = true;
+  target.hidden = false;
+  if (state.drills.loadStatus === "error") {
+    target.dataset.state = "error";
+    target.innerHTML = `<strong>故障演练库读取失败</strong><span>${escapeHtml(state.drills.loadError || "服务暂时不可用")}</span><button class="secondary-button" data-action="retry-drills" type="button">重新加载</button>`;
+    return;
+  }
+  target.dataset.state = "loading";
+  target.innerHTML = `<strong>正在读取故障演练库</strong><span>正在获取分类、场景和最近演练记录…</span>`;
+}
+
 function renderDrillCatalog() {
   const catalog = state.drills.catalog || { categories: [], items: [] };
-  const categorySelect = document.querySelector("#drillCategorySelect");
-  categorySelect.innerHTML = catalog.categories.map((item) => `<option value="${escapeHtml(item.id)}">${escapeHtml(item.name)}</option>`).join("");
+  renderDrillLoadState();
+  if (state.drills.loadStatus !== "ready") return;
   if (!catalog.categories.some((item) => item.id === state.drills.category)) state.drills.category = catalog.categories[0]?.id || "network";
-  categorySelect.value = state.drills.category;
+  const counts = Object.fromEntries(catalog.categories.map((category) => [category.id, catalog.items.filter((item) => item.category === category.id).length]));
+  document.querySelector("#drillCategoryTabs").innerHTML = catalog.categories.map((category) => `
+    <button class="${category.id === state.drills.category ? "is-active" : ""}" data-drill-category="${escapeHtml(category.id)}" type="button">
+      <strong>${escapeHtml(category.name)}</strong><small>${escapeHtml(counts[category.id] || 0)} 个</small>
+    </button>`).join("");
+  document.querySelector("#drillCategorySelect").value = state.drills.category;
   const items = catalog.items.filter((item) => item.category === state.drills.category);
   if (!items.some((item) => item.id === state.drills.selectedScenarioId)) state.drills.selectedScenarioId = items[0]?.id || "";
-  const scenarioSelect = document.querySelector("#drillScenarioSelect");
-  scenarioSelect.innerHTML = items.map((item) => `<option value="${escapeHtml(item.id)}">${escapeHtml(item.name)}</option>`).join("");
-  scenarioSelect.value = state.drills.selectedScenarioId;
+  const scenarioInput = document.querySelector("#drillScenarioSelect");
+  scenarioInput.value = state.drills.selectedScenarioId;
   const blind = document.querySelector('#drillStartForm input[name="mode"]:checked')?.value === "blind";
   document.querySelector("#drillCatalogCount").textContent = blind ? "随机抽取" : `${items.length} 项`;
   const catalogList = document.querySelector("#drillCatalogList");
@@ -1683,6 +1929,17 @@ function renderDrillCatalog() {
       <small>${escapeHtml(item.visible_symptom)}</small>
       <i>${escapeHtml(item.owner_team)} · ${item.needs_onsite ? "需要现场" : "可先远程"}</i>
     </button>`).join("") || `<div class="admin-empty">这个分类下还没有演练场景。</div>`;
+  const selected = selectedDrillScenario();
+  document.querySelector("#drillSelectedName").textContent = blind ? `${drillCategoryName(state.drills.category)}随机盲测` : selected?.name || "当前分类暂无场景";
+  document.querySelector("#drillSelectedSymptom").textContent = blind
+    ? "系统只公开故障现象与信号，隐藏答案在演练结束前与运行链隔离。"
+    : selected?.visible_symptom || "请切换其他故障分类。";
+  document.querySelector("#drillSelectedMeta").innerHTML = selected && !blind
+    ? `<span>${escapeHtml(selected.owner_team)}</span><span>${selected.needs_onsite ? "需要现场" : "可先远程"}</span><span>${escapeHtml((selected.source_platforms || []).join(" + "))}</span>`
+    : `<span>${escapeHtml(drillCategoryName(state.drills.category))}</span><span>隐藏答案</span><span>全程留痕</span>`;
+  const startButton = document.querySelector('#drillStartForm button[type="submit"]');
+  startButton.disabled = blind ? !state.drills.category : !selected;
+  scenarioInput.required = !blind;
 }
 
 function renderDrillRuns() {
@@ -1763,6 +2020,27 @@ function renderDrillResult(run) {
   if (run.hidden_truth) truth.innerHTML = `<small>隐藏答案</small><strong>${escapeHtml(run.hidden_truth.label || run.hidden_truth.diagnosis)}</strong><p>故障部件：${escapeHtml(run.hidden_truth.component || "未登记")} · 责任专业：${escapeHtml(run.hidden_truth.owner_team || "待确认")}</p>`;
 }
 
+function renderDrillStageTrack(run) {
+  const terminal = drillTerminal(run);
+  const signalCount = (run.steps || []).filter((step) => step.step_type === "platform_signal").length;
+  let current = 0;
+  if (signalCount) current = 1;
+  if ((run.incident_ids || []).length) current = 2;
+  if (run.status === "waiting_human") current = 3;
+  if (terminal) current = 4;
+  const stages = [
+    ["收到告警", "平台信号进入统一接口"],
+    ["关联设备", "用 SN、设备名和端口关联"],
+    ["AI 判断", "规则、知识与候选原因"],
+    ["人工验证", "许可、测量或现场操作"],
+    ["恢复确认", "监控、业务和人工结果"],
+  ];
+  document.querySelector("#drillStageTrack").innerHTML = stages.map(([title, note], index) => {
+    const status = index < current ? "done" : index === current ? "current" : "upcoming";
+    return `<li data-state="${status}"><span>${String(index + 1).padStart(2, "0")}</span><strong>${title}</strong><small>${note}</small></li>`;
+  }).join("");
+}
+
 function renderActiveDrill() {
   const run = state.drills.active;
   document.querySelector("#drillEmptyState").hidden = Boolean(run);
@@ -1780,6 +2058,7 @@ function renderActiveDrill() {
   document.querySelector('[data-action="drill-step"]').disabled = !canAdvance;
   document.querySelector('[data-action="drill-next-human"]').disabled = !canAdvance;
   document.querySelector('[data-action="terminate-drill"]').disabled = drillTerminal(run);
+  renderDrillStageTrack(run);
   renderDrillLocation(run);
   renderDrillTimeline(run);
   renderDrillCheckpoint(run);
@@ -1794,14 +2073,27 @@ function focusActiveDrillOnSmallScreen() {
 }
 
 async function loadDrills() {
-  const [catalog, runs] = await Promise.all([api("/api/drills/catalog"), api("/api/drills/runs?limit=100")]);
-  state.drills.catalog = catalog;
-  state.drills.runs = runs.items || [];
-  renderDrillCatalog();
-  renderDrillRuns();
-  if (state.drills.active?.id) {
-    state.drills.active = await api(`/api/drills/runs/${encodeURIComponent(state.drills.active.id)}`);
-    renderActiveDrill();
+  state.drills.loadStatus = "loading";
+  state.drills.loadError = "";
+  renderDrillLoadState();
+  try {
+    const [catalog, runs] = await Promise.all([api("/api/drills/catalog"), api("/api/drills/runs?limit=100")]);
+    state.drills.catalog = catalog;
+    state.drills.runs = runs.items || [];
+    state.drills.loadStatus = "ready";
+    renderDrillCatalog();
+    renderDrillRuns();
+    if (state.drills.active?.id) {
+      state.drills.active = await api(`/api/drills/runs/${encodeURIComponent(state.drills.active.id)}`);
+      renderActiveDrill();
+    }
+  } catch (error) {
+    state.drills.catalog = null;
+    state.drills.loadStatus = "error";
+    state.drills.loadError = error.message;
+    renderDrillLoadState();
+    document.querySelector("#drillCatalogCount").textContent = "加载失败";
+    throw error;
   }
 }
 
@@ -2268,6 +2560,20 @@ document.addEventListener("click", (event) => {
   if (incidentButton) selectIncident(incidentButton.dataset.incidentId);
 
   const action = event.target.closest("[data-action]")?.dataset.action;
+  if (action === "show-incidents") showIncidentList();
+  if (action === "previous-incident") selectAdjacentIncident(-1).catch((error) => showToast(error.message, true));
+  if (action === "next-incident") selectAdjacentIncident(1).catch((error) => showToast(error.message, true));
+  if (action === "clear-incident-filters") {
+    state.filter = "active";
+    state.query = "";
+    state.categoryFilter = "all";
+    state.severityFilter = "all";
+    document.querySelector("#searchInput").value = "";
+    document.querySelector("#categoryFilter").value = "all";
+    document.querySelector("#severityFilter").value = "all";
+    document.querySelectorAll("[data-filter]").forEach((button) => button.classList.toggle("is-active", button.dataset.filter === "active"));
+    renderList();
+  }
   if (action === "open-ingest") openDialog(ingestDialog);
   if (action === "open-demos") openDialog(demoDialog);
   if (action === "open-sources") {
@@ -2281,7 +2587,13 @@ document.addEventListener("click", (event) => {
   if (action === "open-admin") openAdmin();
   if (action === "open-lab") openLab();
   if (action === "open-drills") openDrills();
+  if (action === "retry-drills") loadDrills().then(() => showToast("故障演练库已重新加载")).catch((error) => showToast(`重新加载失败：${error.message}`, true));
   if (action === "refresh-drills") loadDrills().then(() => showToast("演练记录已刷新")).catch((error) => showToast(error.message, true));
+  if (action === "new-drill") {
+    state.drills.active = null;
+    renderActiveDrill();
+    renderDrillCatalog();
+  }
   if (action === "drill-step") advanceDrill("step").catch((error) => showToast(error.message, true));
   if (action === "drill-next-human") advanceDrill("next_human").catch((error) => showToast(error.message, true));
   if (action === "terminate-drill") terminateDrill().catch((error) => showToast(error.message, true));
@@ -2344,6 +2656,9 @@ document.addEventListener("click", (event) => {
     renderList();
   }
 
+  const detailTab = event.target.closest("[data-detail-tab]")?.dataset.detailTab;
+  if (detailTab) activateDetailTab(detailTab, false);
+
   const adminTab = event.target.closest("[data-admin-tab]")?.dataset.adminTab;
   if (adminTab) activateAdminTab(adminTab);
 
@@ -2359,6 +2674,13 @@ document.addEventListener("click", (event) => {
   const drillScenarioButton = event.target.closest("[data-drill-scenario-id]");
   if (drillScenarioButton) {
     state.drills.selectedScenarioId = drillScenarioButton.dataset.drillScenarioId;
+    renderDrillCatalog();
+  }
+
+  const drillCategoryButton = event.target.closest("[data-drill-category]");
+  if (drillCategoryButton) {
+    state.drills.category = drillCategoryButton.dataset.drillCategory;
+    state.drills.selectedScenarioId = "";
     renderDrillCatalog();
   }
 
@@ -2451,6 +2773,17 @@ document.querySelector("#searchInput").addEventListener("input", (event) => {
   state.query = event.target.value;
   renderList();
 });
+document.querySelector("#categoryFilter").addEventListener("change", (event) => {
+  state.categoryFilter = event.target.value;
+  renderList();
+});
+document.querySelector("#severityFilter").addEventListener("change", (event) => {
+  state.severityFilter = event.target.value;
+  renderList();
+});
+document.querySelector("#incidentList").addEventListener("scroll", (event) => {
+  if (state.view === "list") state.listScrollTop = event.currentTarget.scrollTop;
+}, { passive: true });
 document.querySelector("#roleSelect").addEventListener("change", (event) => setRole(event.target.value, false));
 document.querySelector("#userIdentity").addEventListener("change", (event) => {
   state.actor = event.target.value.trim() || defaultActorForRole(state.role);
@@ -2471,25 +2804,13 @@ document.querySelector("#recordSearch").addEventListener("keydown", (event) => {
   }
 });
 document.querySelector("#recordTypeSelect").addEventListener("change", () => loadAdminRecords().catch((error) => showToast(error.message, true)));
-document.querySelector("#drillCategorySelect").addEventListener("change", (event) => {
-  state.drills.category = event.target.value;
-  state.drills.selectedScenarioId = "";
-  renderDrillCatalog();
-});
-document.querySelector("#drillScenarioSelect").addEventListener("change", (event) => {
-  state.drills.selectedScenarioId = event.target.value;
-  renderDrillCatalog();
-});
 document.querySelector("#drillStartForm").addEventListener("change", (event) => {
   if (event.target.name !== "mode") return;
   const blind = event.target.value === "blind";
-  document.querySelector("#drillScenarioField").hidden = blind;
-  document.querySelector("#drillScenarioSelect").required = !blind;
-  document.querySelector("#drillCatalogList").hidden = blind;
-  document.querySelector("#drillCatalogCount").textContent = blind ? "随机抽取" : `${(state.drills.catalog?.items || []).filter((item) => item.category === state.drills.category).length} 项`;
   document.querySelector("#drillModeNote").textContent = blind
     ? "盲测只公开现象、信号和影响路径；隐藏答案在结束前与运行链物理隔离。"
     : "定向演练会显示故障名称；运行过程仍由真实模拟信号触发。";
+  renderDrillCatalog();
 });
 
 document.querySelectorAll(".dialog-tab").forEach((tab) => {
@@ -2549,8 +2870,20 @@ for (const dialog of [ingestDialog, demoDialog, sourceDialog, facilityDialog, ad
   });
 }
 
+window.addEventListener("popstate", () => {
+  const match = window.location.hash.match(/^#incident=(.+)$/);
+  if (match) {
+    selectIncident(decodeURIComponent(match[1]), false, false).catch((error) => showToast(error.message, true));
+  } else {
+    showIncidentList(false);
+  }
+});
+
 setRole(state.role, true);
 loadDemos();
 loadSources(false).catch(() => {});
 loadFacilities().catch(() => {});
-loadIncidents();
+const initialIncidentMatch = window.location.hash.match(/^#incident=(.+)$/);
+if (initialIncidentMatch) state.view = "detail";
+else window.history.replaceState({ view: "list" }, "", historyUrlFor("list"));
+loadIncidents(initialIncidentMatch ? decodeURIComponent(initialIncidentMatch[1]) : null, false);

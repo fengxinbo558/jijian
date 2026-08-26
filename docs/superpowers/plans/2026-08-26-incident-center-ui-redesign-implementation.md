@@ -106,7 +106,7 @@
 
 - 修改：`scripts/browser_smoke.cjs`
 - 修改：`scripts/browser_smoke.py`
-- 新增：`scripts/incident_center_browser_smoke.py`
+- 新增：`scripts/incident_center_browser_smoke.cjs`
 - 更新：`reports/browser-desktop.png`
 - 更新：`reports/browser-mobile.png`
 
