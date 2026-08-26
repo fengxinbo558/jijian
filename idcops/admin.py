@@ -34,6 +34,16 @@ class AdminService:
                             "count"
                         ]
                     ),
+                    "constraint_profiles": int(
+                        connection.execute(
+                            "SELECT COUNT(*) AS count FROM constraint_profiles"
+                        ).fetchone()["count"]
+                    ),
+                    "retrieval_test_runs": int(
+                        connection.execute(
+                            "SELECT COUNT(*) AS count FROM retrieval_test_runs"
+                        ).fetchone()["count"]
+                    ),
                 }
             )
         return value
@@ -51,6 +61,100 @@ class AdminService:
             lowered = query.lower()
             items = [item for item in items if lowered in str(item).lower()]
         return {"record_type": record_type, "total": len(items), "items": items[:safe_limit]}
+
+    def list_activity(self, limit: int = 100) -> List[Dict[str, Any]]:
+        """Return one readable timeline across AI asset and audit tables."""
+
+        safe_limit = max(1, min(int(limit), 500))
+        items: List[Dict[str, Any]] = []
+        with self.store.connect() as connection:
+            for row in connection.execute(
+                "SELECT id, incident_id, action, details_json, created_at "
+                "FROM audit_log ORDER BY created_at DESC LIMIT ?",
+                (safe_limit,),
+            ).fetchall():
+                items.append(
+                    {
+                        "id": f"AUD-{row['id']}",
+                        "activity_type": "system_audit",
+                        "action": row["action"],
+                        "actor": "system_or_role_action",
+                        "asset": row["incident_id"] or "system",
+                        "status": "recorded",
+                        "details": _load(row["details_json"], {}),
+                        "created_at": row["created_at"],
+                    }
+                )
+            for row in connection.execute(
+                "SELECT * FROM retrieval_test_runs ORDER BY created_at DESC LIMIT ?",
+                (safe_limit,),
+            ).fetchall():
+                result = _load(row["result_json"], {})
+                items.append(
+                    {
+                        "id": row["id"],
+                        "activity_type": "retrieval_test",
+                        "action": "运行检索测试",
+                        "actor": row["actor"],
+                        "asset": f"knowledge@{row['knowledge_version']}",
+                        "status": result.get("coverage", "recorded"),
+                        "details": {
+                            "query": _load(row["query_json"], {}),
+                            "hit_count": len(result.get("hits", [])),
+                            "constraint_version": row["constraint_version"],
+                            "production_incident_created": False,
+                        },
+                        "created_at": row["created_at"],
+                    }
+                )
+            for row in connection.execute(
+                "SELECT * FROM release_runs ORDER BY updated_at DESC LIMIT ?",
+                (safe_limit,),
+            ).fetchall():
+                items.append(
+                    {
+                        "id": row["id"],
+                        "activity_type": "release",
+                        "action": "版本测试、发布或回滚",
+                        "actor": row["approved_by"] or row["requested_by"],
+                        "asset": f"{row['asset_type']}:{row['asset_key']}@{row['version']}",
+                        "status": row["status"],
+                        "details": {
+                            "requested_by": row["requested_by"],
+                            "approved_by": row["approved_by"],
+                            "environment": row["environment"],
+                            "diff": _load(row["diff_json"], {}),
+                        },
+                        "created_at": row["updated_at"],
+                    }
+                )
+            version_queries = (
+                ("prompt_draft", "prompt_key", "prompt_versions"),
+                ("knowledge_draft", "card_id", "knowledge_versions"),
+                ("constraint_draft", "policy_key", "constraint_versions"),
+            )
+            for activity_type, key_column, table in version_queries:
+                rows = connection.execute(
+                    f"SELECT {key_column} AS asset_key, version, release_status, "
+                    f"created_by, created_at FROM {table} "
+                    "WHERE created_by != 'system_seed' ORDER BY created_at DESC LIMIT ?",
+                    (safe_limit,),
+                ).fetchall()
+                for row in rows:
+                    items.append(
+                        {
+                            "id": f"{activity_type}:{row['asset_key']}@{row['version']}",
+                            "activity_type": activity_type,
+                            "action": "创建资产版本",
+                            "actor": row["created_by"],
+                            "asset": f"{row['asset_key']}@{row['version']}",
+                            "status": row["release_status"],
+                            "details": {},
+                            "created_at": row["created_at"],
+                        }
+                    )
+        items.sort(key=lambda item: str(item.get("created_at", "")), reverse=True)
+        return items[:safe_limit]
 
     def _database_records(self, record_type: str, query: str, limit: int) -> List[Dict[str, Any]]:
         specifications = {

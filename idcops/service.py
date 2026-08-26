@@ -14,6 +14,7 @@ from .agent_trace import AgentTraceRecorder
 from .assets import AssetRegistry
 from .backups import BackupService
 from .admin import AdminService
+from .constraints import ConstraintRegistry
 from .drills import DrillService
 from .facility import assess_facility_event, strongest_assessment
 from .investigation import apply_model_enrichment, build_investigation, merge_investigations
@@ -30,6 +31,7 @@ from .rules import analyze_rules
 from .releases import ReleaseManager
 from .rag_trace import RagTraceRecorder
 from .raw_access import RawAccessService
+from .retrieval_tests import RetrievalTestService
 from .store import IncidentStore
 from .views import project_agent_run, project_incident, project_integration_event
 
@@ -146,8 +148,10 @@ class IncidentService:
         self.store = store
         self.assets = AssetRegistry(store)
         self.assets.ensure_seeded()
+        self.constraints = ConstraintRegistry(store)
+        self.constraints.ensure_seeded()
         self.admin = AdminService(store, self.assets)
-        self.releases = ReleaseManager(store, self.assets)
+        self.releases = ReleaseManager(store, self.assets, self.constraints)
         self.rag_traces = RagTraceRecorder(store, self.assets)
         self.operations = OperationService(store)
         self.lab = IntegrationLab(store)
@@ -161,7 +165,14 @@ class IncidentService:
         )
         self.raw_access = RawAccessService(store, self)
         self.backups = BackupService(store)
-        self.knowledge = knowledge or KnowledgeBase(registry=self.assets)
+        self.knowledge = knowledge or KnowledgeBase(
+            registry=self.assets, constraints=self.constraints
+        )
+        if knowledge is not None and getattr(knowledge, "constraints", None) is None:
+            setattr(knowledge, "constraints", self.constraints)
+        self.retrieval_tests = RetrievalTestService(
+            store, self.knowledge, self.constraints
+        )
         self.integrations = integrations or IntegrationHub()
         self.production = ProductionGovernance(store, self.ingest)
         self.public_datasets = PublicDatasetService(store, self.production)

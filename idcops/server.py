@@ -95,6 +95,13 @@ class RequestHandler(BaseHTTPRequestHandler):
                     HTTPStatus.OK,
                     self.app.service.admin.list_records(record_type, search, limit),
                 )
+            elif path == "/api/admin/activity":
+                query = parse_qs(parsed_url.query)
+                limit = int(query.get("limit", ["100"])[0])
+                self._json(
+                    HTTPStatus.OK,
+                    {"items": self.app.service.admin.list_activity(limit)},
+                )
             elif path == "/api/admin/knowledge":
                 self._json(
                     HTTPStatus.OK,
@@ -117,6 +124,27 @@ class RequestHandler(BaseHTTPRequestHandler):
                 if item is None:
                     raise APIError(HTTPStatus.NOT_FOUND, "提示词不存在")
                 self._json(HTTPStatus.OK, item)
+            elif path == "/api/admin/constraints":
+                self._json(
+                    HTTPStatus.OK,
+                    {"items": self.app.service.constraints.list()},
+                )
+            elif path.startswith("/api/admin/constraints/"):
+                policy_key = unquote(path.removeprefix("/api/admin/constraints/"))
+                item = self.app.service.constraints.get(policy_key)
+                if item is None:
+                    raise APIError(HTTPStatus.NOT_FOUND, "约束策略不存在")
+                self._json(HTTPStatus.OK, item)
+            elif path == "/api/admin/retrieval-tests":
+                self._json(
+                    HTTPStatus.OK,
+                    {"items": self.app.service.retrieval_tests.list()},
+                )
+            elif path == "/api/admin/rag-index":
+                self._json(
+                    HTTPStatus.OK,
+                    self.app.service.retrieval_tests.index_status(),
+                )
             elif path == "/api/admin/releases":
                 self._json(
                     HTTPStatus.OK,
@@ -405,6 +433,14 @@ class RequestHandler(BaseHTTPRequestHandler):
                 result = self.app.service.assets.create_knowledge_version(
                     parts[3], payload, self._actor()
                 )
+                self._json(HTTPStatus.CREATED, result)
+            elif len(parts) == 5 and parts[:3] == ["api", "admin", "constraints"] and parts[4] == "versions":
+                result = self.app.service.constraints.create_version(
+                    parts[3], payload, self._actor()
+                )
+                self._json(HTTPStatus.CREATED, result)
+            elif path == "/api/admin/retrieval-tests":
+                result = self.app.service.retrieval_tests.run(payload, self._actor())
                 self._json(HTTPStatus.CREATED, result)
             elif path == "/api/admin/releases/test":
                 result = self.app.service.releases.test_asset(payload, self._actor())

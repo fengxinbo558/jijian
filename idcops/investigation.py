@@ -517,6 +517,13 @@ def build_investigation(
         text=raw_text,
         device_type=event.device.device_type,
     )
+    constraint_registry = getattr(knowledge_base, "constraints", None)
+    constraint_version = (
+        constraint_registry.published_version() if constraint_registry is not None else "built-in"
+    )
+    retrieval_policy = (
+        constraint_registry.published_settings() if constraint_registry is not None else {}
+    )
     knowledge_view = _knowledge_view(matches)
     hypotheses = _hypotheses(matches, facts, analysis.candidate_causes)
     verification = _verification_plan(matches, hypotheses)
@@ -576,7 +583,18 @@ def build_investigation(
                 "device_type": event.device.device_type,
                 "text_excerpt": raw_text[:2000],
             },
-            "capabilities": ["rules", "facts", "terms", "local_feature_vector"],
+            "capabilities": [
+                "rules",
+                "facts",
+                "terms",
+                *(
+                    ["local_feature_vector"]
+                    if retrieval_policy.get("vector_assist_enabled", True)
+                    else []
+                ),
+            ],
+            "constraint_version": constraint_version,
+            "policy": retrieval_policy,
             "cards": knowledge_view,
         },
         "correlation": correlation,

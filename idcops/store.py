@@ -200,6 +200,41 @@ class IncidentStore:
                     UNIQUE(prompt_key, version)
                 );
 
+                CREATE TABLE IF NOT EXISTS constraint_profiles (
+                    policy_key TEXT PRIMARY KEY,
+                    name TEXT NOT NULL,
+                    purpose TEXT NOT NULL,
+                    lifecycle_status TEXT NOT NULL,
+                    published_version TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS constraint_versions (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    policy_key TEXT NOT NULL,
+                    version TEXT NOT NULL,
+                    release_status TEXT NOT NULL,
+                    settings_json TEXT NOT NULL,
+                    created_by TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    published_at TEXT NOT NULL,
+                    FOREIGN KEY(policy_key) REFERENCES constraint_profiles(policy_key),
+                    UNIQUE(policy_key, version)
+                );
+
+                CREATE TABLE IF NOT EXISTS retrieval_test_runs (
+                    id TEXT PRIMARY KEY,
+                    actor TEXT NOT NULL,
+                    query_json TEXT NOT NULL,
+                    result_json TEXT NOT NULL,
+                    knowledge_version TEXT NOT NULL,
+                    constraint_version TEXT NOT NULL,
+                    created_at TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_retrieval_test_runs_created
+                    ON retrieval_test_runs(created_at DESC);
+
                 CREATE TABLE IF NOT EXISTS release_runs (
                     id TEXT PRIMARY KEY,
                     asset_type TEXT NOT NULL,

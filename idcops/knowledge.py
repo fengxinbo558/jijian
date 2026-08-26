@@ -11,6 +11,7 @@ from .embeddings import LocalFeatureEmbeddingProvider
 
 if TYPE_CHECKING:
     from .assets import AssetRegistry
+    from .constraints import ConstraintRegistry
 
 
 REQUIRED_FIELDS = {
@@ -68,11 +69,13 @@ class KnowledgeBase:
         self,
         path: Optional[str] = None,
         registry: Optional["AssetRegistry"] = None,
+        constraints: Optional["ConstraintRegistry"] = None,
         embedding_provider: Optional[LocalFeatureEmbeddingProvider] = None,
     ) -> None:
         root = Path(__file__).resolve().parent.parent
         self.path = Path(path).expanduser().resolve() if path else root / "knowledge" / "diagnostic_cards.json"
         self.registry = registry
+        self.constraints = constraints
         self.embedding_provider = embedding_provider or LocalFeatureEmbeddingProvider()
         self.schema_version = ""
         self.sources: Dict[str, Dict[str, Any]] = {}
@@ -175,12 +178,23 @@ class KnowledgeBase:
         fact_types: Sequence[str],
         text: str,
         device_type: str,
-        limit: int = 8,
+        limit: Optional[int] = None,
     ) -> List[Dict[str, Any]]:
         """Return matched cards with transparent, deterministic reasons."""
 
         if self.registry is not None:
             self._load()
+
+        policy = self.constraints.published_settings() if self.constraints is not None else {
+            "retrieval_top_k": 8,
+            "vector_assist_enabled": True,
+            "vector_only_min_similarity": 0.22,
+            "allowed_domains": [],
+        }
+        effective_limit = int(limit if limit is not None else policy["retrieval_top_k"])
+        vector_enabled = bool(policy["vector_assist_enabled"])
+        vector_only_threshold = float(policy["vector_only_min_similarity"])
+        allowed_domains = {str(item) for item in policy.get("allowed_domains", [])}
 
         rule_set = self._terms(rule_names)
         fact_set = self._terms(fact_types)
@@ -190,6 +204,8 @@ class KnowledgeBase:
         query_vector = self.embedding_provider.embed([query_text])[0]
         found: List[Dict[str, Any]] = []
         for card in self.cards:
+            if allowed_domains and str(card.get("domain")) not in allowed_domains:
+                continue
             match = card.get("match", {})
             matched_rules = sorted(rule_set & self._terms(match.get("rule_names", [])))
             matched_facts = sorted(fact_set & self._terms(match.get("fact_types", [])))
@@ -214,10 +230,20 @@ class KnowledgeBase:
                     card.get(field, []) if isinstance(card.get(field), list) else [card.get(field, "")]
                 )
             )
-            card_vector = self.embedding_provider.embed([card_text])[0]
-            vector_similarity = self.embedding_provider.similarity(query_vector, card_vector)
-            vector_only = not matched_facts and not matched_terms
-            if vector_only and vector_similarity < 0.22:
+            vector_similarity = 0.0
+            if vector_enabled:
+                card_vector = self.embedding_provider.embed([card_text])[0]
+                vector_similarity = self.embedding_provider.similarity(query_vector, card_vector)
+            explicit_match = bool(matched_rules or matched_facts or matched_terms)
+            if vector_enabled:
+                # Device applicability is ranking context, not enough by itself to
+                # retrieve every card for a server. Preserve the original hybrid
+                # behavior: exact facts/terms pass directly; other candidates need
+                # the configured vector threshold.
+                vector_only = not matched_facts and not matched_terms
+                if vector_only and vector_similarity < vector_only_threshold:
+                    continue
+            elif not explicit_match:
                 continue
             score = len(matched_rules) * 2 + len(matched_facts) * 5 + len(matched_terms) * 2
             reasons: List[str] = []
@@ -230,12 +256,12 @@ class KnowledgeBase:
             if device_match:
                 reasons.append("设备类型适用")
                 score += 1
-            if vector_similarity >= 0.12:
+            if vector_enabled and vector_similarity >= 0.12:
                 reasons.append(f"本地特征向量相似：{vector_similarity:.2f}")
                 # Exact facts and terms are stronger evidence than the local feature vector.
                 # The vector branch may surface otherwise missed cards, but must not reorder
                 # two deterministic matches into a less specific next action.
-                if not matched_facts and not matched_terms:
+                if not matched_rules and not matched_facts and not matched_terms:
                     score += max(1, int(vector_similarity * 10))
             found.append(
                 {
@@ -255,4 +281,4 @@ class KnowledgeBase:
                 }
             )
         found.sort(key=lambda item: (-int(item["score"]), str(item["card"]["id"])))
-        return found[: max(1, min(limit, 20))]
+        return found[: max(1, min(effective_limit, 20))]

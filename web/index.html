@@ -49,7 +49,7 @@
         </button>
         <button class="rail-button" id="adminRailButton" data-action="open-admin" type="button">
           <span class="rail-icon" aria-hidden="true">管</span>
-          <span>数据与AI</span>
+          <span>AI控制台</span>
         </button>
         <button class="rail-button" data-action="open-operations" type="button">
           <span class="rail-icon" aria-hidden="true">操</span>
@@ -63,8 +63,8 @@
             <option value="onsite_operator">现场人员</option>
             <option value="facility_lead">机房组长</option>
             <option value="interface_person">系统/网络接口人</option>
-            <option value="ai_admin" selected>AI 管理员</option>
-            <option value="super_admin">最高管理员</option>
+            <option value="ai_admin" selected>AI 运营管理员</option>
+            <option value="super_admin">最高审计管理员</option>
           </select>
         </label>
         <label class="role-picker" for="userIdentity">
@@ -525,7 +525,7 @@
         </div>
 
         <section class="break-glass" id="breakGlassPanel" hidden aria-labelledby="breakGlassTitle">
-          <header><div><p class="eyebrow">BREAK-GLASS RAW ACCESS</p><h3 id="breakGlassTitle">最高管理员原始记录访问</h3></div></header>
+          <header><div><p class="eyebrow">BREAK-GLASS RAW ACCESS</p><h3 id="breakGlassTitle">最高审计管理员原始记录访问</h3></div></header>
           <p>默认视图已脱敏。只有排障复核确实需要时，填写原因并再次确认；本次访问会进入不可覆盖的审计记录。</p>
           <form id="rawAccessForm">
             <label>记录类型<select name="record_type"><option value="agent_run">AI 调查运行</option><option value="incident">故障事件</option><option value="integration_event">平台信号</option></select></label>
@@ -717,27 +717,33 @@
     </div>
   </dialog>
 
-  <dialog class="work-dialog admin-dialog" id="adminDialog" aria-labelledby="adminTitle">
-    <div class="dialog-frame admin-frame">
+  <section class="ai-console-view" id="adminView" aria-labelledby="adminTitle" hidden>
+    <div class="admin-frame">
       <header class="dialog-header admin-header">
         <div>
-          <p class="eyebrow">DATA &amp; AI CONTROL ROOM</p>
-          <h2 id="adminTitle">数据与 AI 管理</h2>
-          <p>查看系统保存了什么、AI 根据什么判断，并在测试通过后把新版本用于后续事件。</p>
+          <p class="eyebrow">AI CONTROL CONSOLE</p>
+          <h2 id="adminTitle">AI 控制台</h2>
+          <p>看数据、调知识、测检索、改提示词和约束；只有已发布版本会影响后续故障。</p>
         </div>
-        <button class="icon-button" data-close-dialog type="button" aria-label="关闭数据与 AI 管理">×</button>
+        <button class="secondary-button" data-action="show-incidents" type="button">返回故障中心</button>
       </header>
 
       <div class="admin-summary" id="adminSummary" aria-live="polite"></div>
 
       <div class="admin-workbench">
-        <nav class="admin-nav" aria-label="数据与 AI 管理栏目">
-          <button class="admin-nav-button is-active" data-admin-tab="database" type="button"><strong>我的数据库</strong><span>事件、输入与审计记录</span></button>
-          <button class="admin-nav-button" data-admin-tab="knowledge" type="button"><strong>经验知识库</strong><span>规则、SOP 与历史经验</span></button>
-          <button class="admin-nav-button" data-admin-tab="prompts" type="button"><strong>提示词中心</strong><span>System 与用户提示词</span></button>
-          <button class="admin-nav-button" data-admin-tab="rag" type="button"><strong>分析链路</strong><span>每次判断的 8 个步骤</span></button>
+        <nav class="admin-nav" aria-label="AI 控制台栏目">
+          <p class="admin-nav-group">数据基础</p>
+          <button class="admin-nav-button is-active" data-admin-tab="database" type="button"><strong>数据资产</strong><span>事件、输入与基础档案</span></button>
+          <button class="admin-nav-button" data-admin-tab="knowledge" type="button"><strong>RAG 知识库</strong><span>规则、SOP 与历史经验</span></button>
+          <button class="admin-nav-button" data-admin-tab="retrieval" type="button"><strong>检索测试</strong><span>用真实召回链路做无副作用测试</span></button>
+          <p class="admin-nav-group">AI 配置</p>
+          <button class="admin-nav-button" data-admin-tab="prompts" type="button"><strong>提示词</strong><span>System、用户模板与输出格式</span></button>
+          <button class="admin-nav-button" data-admin-tab="constraints" type="button"><strong>约束中心</strong><span>可调策略与不可绕过门禁</span></button>
           <button class="admin-nav-button" data-admin-tab="providers" type="button"><strong>模型与厂商</strong><span>本地、私有化与合作接口</span></button>
-          <button class="admin-nav-button" data-admin-tab="releases" type="button"><strong>上线记录</strong><span>测试、发布与回滚</span></button>
+          <p class="admin-nav-group">上线与审计</p>
+          <button class="admin-nav-button" data-admin-tab="releases" type="button"><strong>版本上线</strong><span>测试、两次确认与回滚</span></button>
+          <button class="admin-nav-button" data-admin-tab="rag" type="button"><strong>分析轨迹</strong><span>每次判断可见的 8 个步骤</span></button>
+          <button class="admin-nav-button" data-admin-tab="audit" type="button"><strong>审计记录</strong><span>谁改了什么、何时生效</span></button>
         </nav>
 
         <section class="admin-panel is-active" data-admin-panel="database" aria-labelledby="databasePanelTitle">
@@ -772,6 +778,28 @@
           </div>
         </section>
 
+        <section class="admin-panel" data-admin-panel="retrieval" aria-labelledby="retrievalPanelTitle">
+          <header class="admin-panel-header">
+            <div><p class="eyebrow">REAL RETRIEVAL TEST</p><h3 id="retrievalPanelTitle">检索测试</h3></div>
+            <span class="safety-badge">不创建故障 · 不触发现场操作</span>
+          </header>
+          <p class="panel-explainer">这里调用和真实调查相同的知识检索器。输入脱敏日志后，会显示召回了哪些知识、为什么命中、使用了哪个知识版本和约束版本。</p>
+          <div class="retrieval-layout">
+            <form class="retrieval-test-form" id="retrievalTestForm">
+              <div class="retrieval-index-strip" id="retrievalIndexStatus" aria-live="polite"></div>
+              <label>脱敏日志或故障描述<textarea name="text" rows="9" required placeholder="例如：nvme0: I/O timeout，blk_update_request I/O error"></textarea></label>
+              <div class="editor-grid">
+                <label>限定领域<select name="domain"><option value="">全部领域</option><option value="storage">存储</option><option value="network">网络</option><option value="system">系统</option><option value="compute">计算硬件</option><option value="application">应用</option><option value="facility">动环</option></select></label>
+                <label>设备类型<input name="device_type" value="server" placeholder="server / switch"></label>
+                <label>已知规则（逗号分隔）<input name="rule_names" placeholder="nvme_timeout"></label>
+              </div>
+              <button class="primary-button" type="submit">运行真实检索测试</button>
+            </form>
+            <section class="retrieval-result" id="retrievalTestResult" aria-live="polite"><div class="admin-empty">输入一段脱敏日志，查看真实知识召回结果。测试记录会留在审计中，但不会生成故障。</div></section>
+          </div>
+          <details class="retrieval-history"><summary>查看最近检索测试</summary><div id="retrievalTestHistory"></div></details>
+        </section>
+
         <section class="admin-panel" data-admin-panel="prompts" aria-labelledby="promptPanelTitle">
           <header class="admin-panel-header">
             <div><p class="eyebrow">PROMPT VERSIONING</p><h3 id="promptPanelTitle">System 与用户提示词</h3></div>
@@ -781,6 +809,18 @@
           <div class="asset-split prompt-split">
             <div class="asset-list" id="promptList" aria-label="提示词列表"></div>
             <div class="asset-detail" id="promptDetail" aria-live="polite"><div class="admin-empty">从左侧选择一个提示词查看 System、用户模板和版本。</div></div>
+          </div>
+        </section>
+
+        <section class="admin-panel" data-admin-panel="constraints" aria-labelledby="constraintPanelTitle">
+          <header class="admin-panel-header">
+            <div><p class="eyebrow">POLICY &amp; HARD GUARDS</p><h3 id="constraintPanelTitle">约束中心</h3></div>
+            <span class="safety-badge">可调策略 ≠ 安全门禁</span>
+          </header>
+          <p class="panel-explainer">检索数量、向量辅助等策略可保存为草稿并测试上线；断电批准、完整 SN、证据引用等硬门禁只能查看，不能被提示词或模型关闭。</p>
+          <div class="constraint-layout">
+            <section class="hard-guard-board"><header><h4>不可绕过的硬门禁</h4><span>由权限与状态机执行</span></header><div id="hardGuardList"></div></section>
+            <section class="constraint-editor" id="constraintEditor" aria-live="polite"><div class="admin-empty">正在加载线上策略…</div></section>
           </div>
         </section>
 
@@ -809,7 +849,7 @@
             <div><p class="eyebrow">SAFE RELEASE</p><h3 id="releasePanelTitle">测试、上线与回滚记录</h3></div>
             <button class="secondary-button" data-action="load-releases" type="button">刷新记录</button>
           </header>
-          <p class="panel-explainer">个人版由一名 AI 管理员完成两步确认；正式版可切换为双人审批。页面会明确标出哪些只是结构检查，不能把“格式正确”写成“事实正确”。已发布版本可回滚。</p>
+          <p class="panel-explainer">个人版由一名 AI 运营管理员完成两步确认；正式版可切换为双人审批。页面会明确标出哪些只是结构检查，不能把“格式正确”写成“事实正确”。已发布版本可回滚。</p>
           <div class="release-list" id="releaseList" aria-live="polite"></div>
         </section>
 
@@ -824,9 +864,18 @@
             <div class="provider-detail" id="providerDetail" aria-live="polite"><div class="admin-empty">选择一个适配器查看数据边界和配置。</div></div>
           </div>
         </section>
+        <section class="admin-panel" data-admin-panel="audit" aria-labelledby="auditPanelTitle">
+          <header class="admin-panel-header">
+            <div><p class="eyebrow">APPEND-ONLY AUDIT</p><h3 id="auditPanelTitle">审计记录</h3></div>
+            <button class="secondary-button" data-action="load-ai-audit" type="button">刷新审计</button>
+          </header>
+          <p class="panel-explainer">记录资产修改、检索测试、模型配置、版本发布与回滚。AI 运营管理员默认只看结构化记录；最高审计管理员如需查指定原文，仍必须走受控揭晓流程。</p>
+          <div class="audit-role-note" id="auditRoleNote"></div>
+          <div class="record-browser" id="aiAuditList" aria-live="polite"></div>
+        </section>
       </div>
     </div>
-  </dialog>
+  </section>
 
   <dialog class="confirm-dialog" id="publishConfirmDialog" aria-labelledby="publishConfirmTitle">
     <form method="dialog" class="confirm-card" id="publishConfirmForm">

@@ -52,6 +52,10 @@ const state = {
     summary: null,
     knowledge: [],
     prompts: [],
+    constraints: [],
+    retrievalTests: [],
+    retrievalIndex: null,
+    constraintPolicy: null,
     releases: [],
     ragRuns: [],
     providers: [],
@@ -99,7 +103,7 @@ const ingestDialog = document.querySelector("#ingestDialog");
 const demoDialog = document.querySelector("#demoDialog");
 const sourceDialog = document.querySelector("#sourceDialog");
 const facilityDialog = document.querySelector("#facilityDialog");
-const adminDialog = document.querySelector("#adminDialog");
+const adminView = document.querySelector("#adminView");
 const publishConfirmDialog = document.querySelector("#publishConfirmDialog");
 const operationDialog = document.querySelector("#operationDialog");
 const cameraDialog = document.querySelector("#cameraDialog");
@@ -826,6 +830,7 @@ function activateDetailTab(name, focus = false) {
 
 function historyUrlFor(view, incidentId = null) {
   if (view === "detail" && incidentId) return `#incident=${encodeURIComponent(incidentId)}`;
+  if (view === "admin") return `#ai-control=${encodeURIComponent(state.admin.tab)}`;
   return "#incidents";
 }
 
@@ -834,7 +839,8 @@ function showIncidentList(pushHistory = true) {
   document.body.dataset.incidentView = "list";
   document.querySelector("#incidentListView").hidden = false;
   document.querySelector("#incidentDetailView").hidden = true;
-  document.querySelectorAll('.rail-button[data-action="show-incidents"]').forEach((button) => button.classList.add("is-active"));
+  adminView.hidden = true;
+  document.querySelectorAll(".rail-button").forEach((button) => button.classList.toggle("is-active", button.dataset.action === "show-incidents"));
   if (pushHistory && window.location.hash !== "#incidents") {
     window.history.pushState({ view: "list" }, "", historyUrlFor("list"));
   }
@@ -852,6 +858,8 @@ function showIncidentDetail(pushHistory = true) {
   document.body.dataset.incidentView = "detail";
   document.querySelector("#incidentListView").hidden = true;
   document.querySelector("#incidentDetailView").hidden = false;
+  adminView.hidden = true;
+  document.querySelectorAll(".rail-button").forEach((button) => button.classList.toggle("is-active", button.dataset.action === "show-incidents"));
   if (pushHistory && window.location.hash !== historyUrlFor("detail", state.selectedId)) {
     window.history.pushState({ view: "detail", incidentId: state.selectedId }, "", historyUrlFor("detail", state.selectedId));
   }
@@ -1030,15 +1038,15 @@ const roleNames = {
   onsite_operator: "现场人员",
   facility_lead: "机房组长",
   interface_person: "系统/网络接口人",
-  ai_admin: "AI 管理员",
-  super_admin: "最高管理员",
+  ai_admin: "AI 运营管理员",
+  super_admin: "最高审计管理员",
 };
 
 const roleBriefs = {
   onsite_operator: ["现场作业", "核对完整 SN、机架位与许可", "只看现场需要的信息；高风险动作必须等人工确认。"],
   facility_lead: ["机房协调", "看待处理、复核与升级", "关注人员分配、双岗复核、CC条件和超时。"],
   interface_person: ["系统 / 网络调查", "看证据、候选原因与缺口", "向现场下发清晰检查项，并确认操作许可。"],
-  ai_admin: ["AI 运营", "管理知识、提示词与模拟接入", "能调试但默认看脱敏轨迹，不能突破查看原文。"],
+  ai_admin: ["AI 运营", "管理知识、提示词、检索与版本", "能调试但默认看脱敏轨迹，不能突破查看原文。"],
   super_admin: ["全局审计", "复核 AI 每轮依据与数据来源", "必要时可填写原因、再次确认后查看原始记录。"],
 };
 
@@ -1080,16 +1088,17 @@ function setRole(role, preserveActor = false) {
   const drillButton = document.querySelector("#drillRailButton");
   const isAdmin = ["ai_admin", "super_admin"].includes(state.role);
   adminButton.classList.toggle("is-locked", !isAdmin);
-  adminButton.setAttribute("aria-description", isAdmin ? "打开数据与 AI 管理" : "仅 AI 管理员可以打开");
+  adminButton.setAttribute("aria-description", isAdmin ? "打开 AI 控制台" : "仅 AI 运营管理员或最高审计管理员可以打开");
   labButton.classList.toggle("is-locked", !isAdmin);
-  labButton.setAttribute("aria-description", isAdmin ? "打开接入实验室" : "仅 AI 管理员与最高管理员可以打开");
+  labButton.setAttribute("aria-description", isAdmin ? "打开接入实验室" : "仅 AI 运营管理员与最高审计管理员可以打开");
   drillButton.hidden = !isAdmin;
   drillButton.setAttribute("aria-description", "打开管理员故障演练台");
   document.querySelector("#breakGlassPanel").hidden = state.role !== "super_admin";
   applyGovernancePermissions();
   renderRoleBrief();
   showToast(`已切换到${roleNames[state.role]}工作台，当前账号 ${state.actor}`);
-  if (state.incidents.length) loadIncidents(state.view === "detail" ? state.selectedId : null, false).catch((error) => showToast(error.message, true));
+  if (!isAdmin && state.view === "admin") showIncidentList();
+  if (state.incidents.length && state.view !== "admin") loadIncidents(state.view === "detail" ? state.selectedId : null, false).catch((error) => showToast(error.message, true));
   if (governanceDialog.open) loadGovernance().catch((error) => showToast(error.message, true));
   if (!isAdmin && drillDialog.open) closeDialog(drillDialog);
 }
@@ -1105,8 +1114,8 @@ function renderAdminSummary(summary = {}) {
     adminSummaryCard("故障事件", summary.incidents || 0, `${summary.event_inputs || 0} 条原始输入`),
     adminSummaryCard("经验知识", knowledge.published || 0, "已发布并参与检索"),
     adminSummaryCard("提示词", prompts.published || 0, "线上版本"),
-    adminSummaryCard("分析链路", summary.rag_runs || 0, "每次均可回放"),
-    adminSummaryCard("审计记录", summary.audit_records || 0, "只追加、不覆盖"),
+    adminSummaryCard("检索测试", summary.retrieval_test_runs || 0, "不生成生产故障"),
+    adminSummaryCard("分析 / 审计", `${summary.rag_runs || 0} / ${summary.audit_records || 0}`, "可回放、只追加"),
   ].join("");
 }
 
@@ -1127,21 +1136,36 @@ function activateAdminTab(name) {
   });
   if (name === "database") loadAdminRecords().catch((error) => showToast(error.message, true));
   if (name === "knowledge") loadKnowledge().catch((error) => showToast(error.message, true));
+  if (name === "retrieval") loadRetrievalConsole().catch((error) => showToast(error.message, true));
   if (name === "prompts") loadPrompts().catch((error) => showToast(error.message, true));
+  if (name === "constraints") loadConstraints().catch((error) => showToast(error.message, true));
   if (name === "rag") loadRagRuns().catch((error) => showToast(error.message, true));
   if (name === "providers") loadProviders().catch((error) => showToast(error.message, true));
   if (name === "releases") loadReleases().catch((error) => showToast(error.message, true));
+  if (name === "audit") loadAIAudit().catch((error) => showToast(error.message, true));
+  if (state.view === "admin" && window.location.hash !== historyUrlFor("admin")) {
+    window.history.replaceState({ view: "admin", adminTab: name }, "", historyUrlFor("admin"));
+  }
 }
 
 async function openAdmin() {
   if (!["ai_admin", "super_admin"].includes(state.role)) {
-    showToast(`当前是${roleNames[state.role]}工作台，只有 AI 管理员或最高管理员能修改数据与 AI 资产`, true);
+    showToast(`当前是${roleNames[state.role]}工作台，只有 AI 运营管理员或最高审计管理员能打开 AI 控制台`, true);
     return;
   }
-  openDialog(adminDialog);
+  state.view = "admin";
+  document.body.dataset.incidentView = "admin";
+  document.querySelector("#incidentListView").hidden = true;
+  document.querySelector("#incidentDetailView").hidden = true;
+  adminView.hidden = false;
+  document.querySelectorAll(".rail-button").forEach((button) => button.classList.toggle("is-active", button.dataset.action === "open-admin"));
+  if (window.location.hash !== historyUrlFor("admin")) {
+    window.history.pushState({ view: "admin", adminTab: state.admin.tab }, "", historyUrlFor("admin"));
+  }
   try {
     await loadAdminSummary();
     activateAdminTab(state.admin.tab);
+    window.requestAnimationFrame(() => document.querySelector("[data-admin-tab].is-active")?.focus({ preventScroll: true }));
   } catch (error) {
     showToast(error.message, true);
   }
@@ -1239,6 +1263,148 @@ async function createKnowledgeDraft(form) {
   showToast(`知识草稿 ${created.version} 已保存，尚未上线`);
   await selectKnowledge(form.dataset.cardId);
   await loadAdminSummary();
+}
+
+function renderRetrievalIndex(index = {}) {
+  const target = document.querySelector("#retrievalIndexStatus");
+  target.innerHTML = `
+    <div><small>已发布知识</small><strong>${escapeHtml(index.published_cards || 0)} 条</strong></div>
+    <div><small>知识索引版本</small><strong>${escapeHtml(index.knowledge_version || "未知")}</strong></div>
+    <div><small>检索约束版本</small><strong>${escapeHtml(index.constraint_version || "未知")}</strong></div>
+    <div><small>向量能力</small><strong>${index.vector_enabled ? "本地特征向量辅助" : "已关闭"}</strong><span>${index.pretrained_semantic_model ? "预训练语义模型" : "不是预训练语义模型"}</span></div>`;
+}
+
+function renderRetrievalResult(result) {
+  const target = document.querySelector("#retrievalTestResult");
+  if (!result) {
+    target.innerHTML = `<div class="admin-empty">输入一段脱敏日志，查看真实知识召回结果。测试记录会留在审计中，但不会生成故障。</div>`;
+    return;
+  }
+  const hits = result.hits || [];
+  target.innerHTML = `
+    <header class="retrieval-result-head" data-coverage="${escapeHtml(result.coverage)}">
+      <div><small>${escapeHtml(result.id)}</small><h4>${hits.length ? `召回 ${hits.length} 条知识` : "证据覆盖不足"}</h4></div>
+      <span>${escapeHtml(result.production_incident_created ? "已创建故障" : "未创建故障")}</span>
+    </header>
+    <div class="retrieval-version-line"><span>知识 ${escapeHtml(result.knowledge_version)}</span><span>约束 ${escapeHtml(result.constraint_version)}</span><span>${escapeHtml((result.capabilities || []).join(" + "))}</span></div>
+    <div class="retrieval-hit-list">${hits.length ? hits.map((hit, index) => `<article>
+      <span class="hit-rank">${String(index + 1).padStart(2, "0")}</span>
+      <div><small>${escapeHtml(hit.domain)} · ${escapeHtml(hit.card_id)} · ${escapeHtml(hit.version)}</small><strong>${escapeHtml(hit.title)}</strong><p>${escapeHtml((hit.reasons || []).join("；") || "命中原因未返回")}</p></div>
+      <b>${Number(hit.score || 0).toFixed(2)}</b>
+    </article>`).join("") : `<div class="admin-empty">没有知识达到当前策略的命中条件。系统只返回“覆盖不足”，不会硬猜根因。</div>`}</div>`;
+}
+
+function renderRetrievalHistory(items = []) {
+  document.querySelector("#retrievalTestHistory").innerHTML = items.length ? items.slice(0, 20).map((item) => `<article class="retrieval-history-row">
+    <div><small>${escapeHtml(item.id)} · ${escapeHtml(formatTime(item.created_at))}</small><strong>${escapeHtml(item.query?.text_excerpt || (item.query?.rule_names || []).join(", ") || "结构化条件")}</strong></div>
+    <span>${escapeHtml(item.actor)}</span><b>${escapeHtml(item.result?.coverage === "matched" ? `命中 ${(item.result?.hits || []).length} 条` : "覆盖不足")}</b>
+  </article>`).join("") : `<div class="admin-empty">还没有检索测试记录。</div>`;
+}
+
+async function loadRetrievalConsole() {
+  const [index, history] = await Promise.all([
+    api("/api/admin/rag-index"),
+    api("/api/admin/retrieval-tests"),
+  ]);
+  state.admin.retrievalIndex = index;
+  state.admin.retrievalTests = history.items || [];
+  renderRetrievalIndex(index);
+  renderRetrievalHistory(state.admin.retrievalTests);
+}
+
+async function runRetrievalTest(form) {
+  const data = new FormData(form);
+  const payload = {
+    text: String(data.get("text") || "").trim(),
+    domain: String(data.get("domain") || ""),
+    device_type: String(data.get("device_type") || "unknown"),
+    rule_names: String(data.get("rule_names") || "").split(",").map((item) => item.trim()).filter(Boolean),
+  };
+  const button = form.querySelector('button[type="submit"]');
+  const original = button.textContent;
+  button.disabled = true;
+  button.textContent = "正在调用真实检索器…";
+  try {
+    const result = await api("/api/admin/retrieval-tests", { method: "POST", body: JSON.stringify(payload) });
+    renderRetrievalResult(result);
+    showToast(result.hits?.length ? `真实检索完成，召回 ${result.hits.length} 条知识；没有创建故障` : "真实检索完成：当前证据覆盖不足，没有创建故障");
+    await Promise.all([loadRetrievalConsole(), loadAdminSummary()]);
+  } finally {
+    button.disabled = false;
+    button.textContent = original;
+  }
+}
+
+function renderConstraints(policy) {
+  const hardGuards = policy.hard_guards || [];
+  const published = policy.published || {};
+  const settings = published.settings || {};
+  const domains = [
+    ["storage", "存储"], ["network", "网络"], ["system", "系统"],
+    ["compute", "计算硬件"], ["application", "应用"], ["facility", "动环"],
+  ];
+  document.querySelector("#hardGuardList").innerHTML = hardGuards.map((guard) => `<article class="hard-guard-item">
+    <span aria-hidden="true">锁</span><div><strong>${escapeHtml(guard.name)}</strong><p>${escapeHtml(guard.description)}</p><small>执行位置：${escapeHtml(guard.enforced_at)}</small></div><b>不可编辑</b>
+  </article>`).join("");
+  document.querySelector("#constraintEditor").innerHTML = `
+    <header class="constraint-editor-head"><div><small>${escapeHtml(policy.policy_key)}</small><h4>${escapeHtml(policy.name)}</h4><p>${escapeHtml(policy.purpose)}</p></div><span class="version-chip">线上 ${escapeHtml(policy.published_version)}</span></header>
+    <div class="lifecycle-rail" aria-label="版本生命周期"><span data-state="online">线上 ${escapeHtml(policy.published_version)}</span><i>→</i><span>草稿</span><i>→</i><span>测试</span><i>→</i><span>确认上线</span></div>
+    <form class="constraint-form" id="constraintDraftForm" data-policy-key="${escapeHtml(policy.policy_key)}">
+      <label>新版本号<input name="version" required value="${escapeHtml(`policy-${new Date().toISOString().replace(/[-:TZ.]/g, "").slice(2, 14)}`)}"></label>
+      <div class="constraint-setting-grid">
+        <label>每次最多召回知识数<input name="retrieval_top_k" type="number" min="1" max="20" value="${escapeHtml(settings.retrieval_top_k || 8)}"></label>
+        <label>纯向量最低相似度<input name="vector_only_min_similarity" type="number" min="0" max="1" step="0.01" value="${escapeHtml(settings.vector_only_min_similarity ?? 0.22)}"></label>
+      </div>
+      <p class="constraint-scope-note">当前真正接入检索器的可调项：召回数量、向量辅助、相似度阈值和知识领域。未接入执行链的预留参数不在界面中冒充“已生效”。</p>
+      <label class="toggle-setting"><input name="vector_assist_enabled" type="checkbox" ${settings.vector_assist_enabled ? "checked" : ""}><span><strong>启用本地特征向量辅助</strong><small>它不是预训练语义模型，界面会如实标注能力边界。</small></span></label>
+      <fieldset class="domain-checks"><legend>允许参与检索的知识领域</legend>${domains.map(([value, label]) => `<label><input type="checkbox" name="allowed_domains" value="${value}" ${(settings.allowed_domains || []).includes(value) ? "checked" : ""}>${label}</label>`).join("")}</fieldset>
+      <footer class="editor-actions"><button class="primary-button" type="submit">保存约束草稿</button></footer>
+    </form>
+    <details class="raw-asset"><summary>查看全部约束版本（${policy.versions?.length || 0}）</summary><div class="version-list">${(policy.versions || []).map((version) => `<div><strong>${escapeHtml(version.version)}</strong><span>${escapeHtml(version.release_status)}</span><time>${escapeHtml(formatTime(version.created_at))}</time>${version.release_status === "draft" ? `<button class="secondary-button" data-action="test-asset" data-asset-type="constraint" data-asset-key="${escapeHtml(policy.policy_key)}" data-version="${escapeHtml(version.version)}" type="button">运行发布测试</button>` : ""}</div>`).join("")}</div></details>`;
+}
+
+async function loadConstraints() {
+  const payload = await api("/api/admin/constraints");
+  state.admin.constraints = payload.items || [];
+  if (!state.admin.constraints.length) {
+    document.querySelector("#constraintEditor").innerHTML = `<div class="admin-empty">还没有约束策略。</div>`;
+    return;
+  }
+  const policy = await api(`/api/admin/constraints/${encodeURIComponent(state.admin.constraints[0].policy_key)}`);
+  state.admin.constraintPolicy = policy;
+  renderConstraints(policy);
+}
+
+async function createConstraintDraft(form) {
+  const data = new FormData(form);
+  const publishedSettings = state.admin.constraintPolicy?.published?.settings || {};
+  const settings = {
+    retrieval_top_k: Number(data.get("retrieval_top_k")),
+    vector_assist_enabled: data.get("vector_assist_enabled") === "on",
+    vector_only_min_similarity: Number(data.get("vector_only_min_similarity")),
+    evidence_excerpt_limit: Number(publishedSettings.evidence_excerpt_limit || 8),
+    no_evidence_mode: String(publishedSettings.no_evidence_mode || "insufficient"),
+    allowed_domains: data.getAll("allowed_domains"),
+  };
+  const created = await api(`/api/admin/constraints/${encodeURIComponent(form.dataset.policyKey)}/versions`, {
+    method: "POST",
+    body: JSON.stringify({ version: String(data.get("version") || "").trim(), settings }),
+  });
+  showToast(`约束草稿 ${created.version} 已保存，尚未影响线上检索`);
+  await Promise.all([loadConstraints(), loadAdminSummary()]);
+}
+
+async function loadAIAudit() {
+  const payload = await api("/api/admin/activity?limit=100");
+  const target = document.querySelector("#aiAuditList");
+  document.querySelector("#auditRoleNote").innerHTML = state.role === "super_admin"
+    ? `<strong>最高审计视图</strong><span>可查看结构化审计；指定原文仍需填写原因并二次确认，不在此页直接裸露。</span>`
+    : `<strong>AI 运营视图</strong><span>可查看配置、测试、发布和回滚记录；不能绕过原始记录揭晓门禁。</span>`;
+  if (!payload.items?.length) {
+    target.innerHTML = `<div class="admin-empty">还没有审计记录。</div>`;
+    return;
+  }
+  target.innerHTML = payload.items.map((item) => `<details class="record-row"><summary><span>${escapeHtml(item.id)}</span><strong>${escapeHtml(item.action)} · ${escapeHtml(item.asset)}</strong><time>${escapeHtml(formatTime(item.created_at))}</time></summary><div class="audit-activity-meta"><span>${escapeHtml(item.activity_type)}</span><strong>${escapeHtml(item.actor)}</strong><b>${escapeHtml(item.status)}</b></div><pre>${escapeHtml(jsonText(item.details))}</pre></details>`).join("");
 }
 
 function renderPromptList() {
@@ -1763,7 +1929,7 @@ function renderAgentTrace(run) {
   const label = run.summary?.label || (run.mode === "model" ? "真实模型 Agent" : run.mode);
   if (state.role !== "super_admin") {
     target.innerHTML = `<div class="agent-trace-head"><div><p class="eyebrow">${escapeHtml(run.id)}</p><h3>${escapeHtml(label)}</h3><p>${escapeHtml(run.stop_reason || run.status)}</p></div><span class="safety-badge">默认脱敏</span></div>
-      <div class="panel-explainer">AI 管理员可以运行调试并查看结果摘要；逐轮模型依据、工具返回和假设变化只在“最高管理员”工作台显示。</div>
+      <div class="panel-explainer">AI 运营管理员可以运行调试并查看结果摘要；逐轮模型依据、工具返回和假设变化只在“最高审计管理员”工作台显示。</div>
       <pre>${escapeHtml(jsonText(run.summary || {}))}</pre>`;
     return;
   }
@@ -2019,7 +2185,7 @@ function renderDrillResult(run) {
   const canReveal = state.role === "super_admin" || run.started_by === state.actor;
   revealButton.hidden = Boolean(run.hidden_truth);
   revealButton.disabled = !run.truth_reveal_available || !canReveal;
-  revealButton.title = canReveal ? "结束后揭晓隐藏答案" : "只有本次发起人或最高管理员可以揭晓";
+  revealButton.title = canReveal ? "结束后揭晓隐藏答案" : "只有本次发起人或最高审计管理员可以揭晓";
   const truth = document.querySelector("#drillTruth");
   truth.hidden = !run.hidden_truth;
   if (run.hidden_truth) truth.innerHTML = `<small>隐藏答案</small><strong>${escapeHtml(run.hidden_truth.label || run.hidden_truth.diagnosis)}</strong><p>故障部件：${escapeHtml(run.hidden_truth.component || "未登记")} · 责任专业：${escapeHtml(run.hidden_truth.owner_team || "待确认")}</p>`;
@@ -2351,7 +2517,7 @@ function renderMaintenanceWindows() {
 function renderSourceHealth() {
   const target = document.querySelector("#sourceHealthList");
   if (!canManageTrustGovernance()) {
-    target.innerHTML = governanceEmpty("当前角色只看治理结果；采集链路明细仅 AI 管理员和最高管理员可见。");
+    target.innerHTML = governanceEmpty("当前角色只看治理结果；采集链路明细仅 AI 运营管理员和最高审计管理员可见。");
     return;
   }
   target.innerHTML = state.governance.sourceHealth.length ? state.governance.sourceHealth.map((item) => `
@@ -2624,6 +2790,7 @@ document.addEventListener("click", (event) => {
   if (action === "load-rag-runs") loadRagRuns().catch((error) => showToast(error.message, true));
   if (action === "load-releases") loadReleases().catch((error) => showToast(error.message, true));
   if (action === "load-providers") loadProviders().catch((error) => showToast(error.message, true));
+  if (action === "load-ai-audit") loadAIAudit().catch((error) => showToast(error.message, true));
   if (action === "preview-prompt") previewPrompt(event.target.closest("[data-action]")).catch((error) => showToast(error.message, true));
   if (action === "test-asset") testAsset(event.target.closest("[data-action]")).catch((error) => showToast(error.message, true));
   if (action === "prepare-release") prepareRelease(event.target.closest("[data-action]").dataset.releaseId).catch((error) => showToast(error.message, true));
@@ -2739,6 +2906,16 @@ document.addEventListener("submit", (event) => {
   if (event.target.matches("#promptDraftForm")) {
     event.preventDefault();
     createPromptDraft(event.target).catch((error) => showToast(`提示词草稿保存失败：${error.message}`, true));
+    return;
+  }
+  if (event.target.matches("#retrievalTestForm")) {
+    event.preventDefault();
+    runRetrievalTest(event.target).catch((error) => showToast(`检索测试失败：${error.message}`, true));
+    return;
+  }
+  if (event.target.matches("#constraintDraftForm")) {
+    event.preventDefault();
+    createConstraintDraft(event.target).catch((error) => showToast(`约束草稿保存失败：${error.message}`, true));
     return;
   }
   if (event.target.matches("#workOrderImportForm")) {
@@ -2869,16 +3046,20 @@ document.querySelector("#publishConfirmForm").addEventListener("submit", (event)
   publishRelease(releaseId).catch((error) => showToast(error.message, true));
 });
 
-for (const dialog of [ingestDialog, demoDialog, sourceDialog, facilityDialog, adminDialog, publishConfirmDialog, operationDialog, labDialog, governanceDialog, drillDialog]) {
+for (const dialog of [ingestDialog, demoDialog, sourceDialog, facilityDialog, publishConfirmDialog, operationDialog, labDialog, governanceDialog, drillDialog]) {
   dialog.addEventListener("click", (event) => {
     if (event.target === dialog) closeDialog(dialog);
   });
 }
 
 window.addEventListener("popstate", () => {
-  const match = window.location.hash.match(/^#incident=(.+)$/);
-  if (match) {
-    selectIncident(decodeURIComponent(match[1]), false, false).catch((error) => showToast(error.message, true));
+  const incidentMatch = window.location.hash.match(/^#incident=(.+)$/);
+  const adminMatch = window.location.hash.match(/^#ai-control=([^&]+)$/);
+  if (incidentMatch) {
+    selectIncident(decodeURIComponent(incidentMatch[1]), false, false).catch((error) => showToast(error.message, true));
+  } else if (adminMatch && ["ai_admin", "super_admin"].includes(state.role)) {
+    state.admin.tab = decodeURIComponent(adminMatch[1]);
+    openAdmin().catch((error) => showToast(error.message, true));
   } else {
     showIncidentList(false);
   }
@@ -2889,6 +3070,17 @@ loadDemos();
 loadSources(false).catch(() => {});
 loadFacilities().catch(() => {});
 const initialIncidentMatch = window.location.hash.match(/^#incident=(.+)$/);
-if (initialIncidentMatch) state.view = "detail";
-else window.history.replaceState({ view: "list" }, "", historyUrlFor("list"));
-loadIncidents(initialIncidentMatch ? decodeURIComponent(initialIncidentMatch[1]) : null, false);
+const initialAdminMatch = window.location.hash.match(/^#ai-control=([^&]+)$/);
+if (initialIncidentMatch) {
+  state.view = "detail";
+} else if (initialAdminMatch && ["ai_admin", "super_admin"].includes(state.role)) {
+  state.admin.tab = decodeURIComponent(initialAdminMatch[1]);
+  state.view = "admin";
+} else {
+  window.history.replaceState({ view: "list" }, "", historyUrlFor("list"));
+}
+loadIncidents(initialIncidentMatch ? decodeURIComponent(initialIncidentMatch[1]) : null, false).then(() => {
+  if (initialAdminMatch && ["ai_admin", "super_admin"].includes(state.role)) {
+    openAdmin().catch((error) => showToast(error.message, true));
+  }
+});

@@ -123,7 +123,12 @@ class RagTraceRecorder:
             {
                 "type": "retrieval_query",
                 "status": "completed",
-                "output": {"query": retrieval.get("query", {}), "capabilities": retrieval.get("capabilities", [])},
+                "output": {
+                    "query": retrieval.get("query", {}),
+                    "capabilities": retrieval.get("capabilities", []),
+                    "constraint_version": retrieval.get("constraint_version", "built-in"),
+                    "policy": retrieval.get("policy", {}),
+                },
                 "message": "构造精确条件和本地向量检索内容",
             },
             {

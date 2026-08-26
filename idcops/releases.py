@@ -6,21 +6,28 @@ import uuid
 from typing import Any, Dict, Mapping, Optional
 
 from .assets import AssetRegistry
+from .constraints import ConstraintRegistry
 from .models import utc_now
 from .store import IncidentStore, _dump, _load
 
 
 class ReleaseManager:
-    def __init__(self, store: IncidentStore, assets: AssetRegistry) -> None:
+    def __init__(
+        self,
+        store: IncidentStore,
+        assets: AssetRegistry,
+        constraints: Optional[ConstraintRegistry] = None,
+    ) -> None:
         self.store = store
         self.assets = assets
+        self.constraints = constraints
 
     def test_asset(self, payload: Mapping[str, Any], actor: str) -> Dict[str, Any]:
         asset_type = str(payload.get("asset_type") or "").strip()
         asset_key = str(payload.get("asset_key") or "").strip()
         version = str(payload.get("version") or "").strip()
-        if asset_type not in {"prompt", "knowledge"}:
-            raise ValueError("资产类型必须是 prompt 或 knowledge")
+        if asset_type not in {"prompt", "knowledge", "constraint"}:
+            raise ValueError("资产类型必须是 prompt、knowledge 或 constraint")
         current = self._current_version(asset_type, asset_key)
         target = self._target(asset_type, asset_key, version)
         if target is None:
@@ -64,6 +71,28 @@ class ReleaseManager:
                     "passed": isinstance(target.get("output_schema"), (list, dict)),
                     "scope": "structural",
                     "does_not_prove": "不证明模型会始终遵守输出格式",
+                },
+                {
+                    "name": "流程检查：版本仍是草稿",
+                    "passed": target.get("release_status") == "draft",
+                    "scope": "workflow",
+                    "does_not_prove": "不证明事实准确率",
+                },
+            ]
+        if asset_type == "constraint":
+            settings = target.get("settings", {})
+            return [
+                {
+                    "name": "结构检查：检索 Top-K 在允许范围内",
+                    "passed": 1 <= int(settings.get("retrieval_top_k", 0)) <= 20,
+                    "scope": "structural",
+                    "does_not_prove": "不证明召回结果适用于所有真实故障",
+                },
+                {
+                    "name": "安全检查：草稿不包含硬门禁开关",
+                    "passed": "disable_hard_guards" not in settings,
+                    "scope": "safety",
+                    "does_not_prove": "硬门禁仍由独立权限和操作服务执行",
                 },
                 {
                     "name": "流程检查：版本仍是草稿",
@@ -182,6 +211,26 @@ class ReleaseManager:
                 (version, now, asset_key),
             )
             return
+        if asset_type == "constraint":
+            exists = connection.execute(
+                "SELECT 1 FROM constraint_versions WHERE policy_key = ? AND version = ?",
+                (asset_key, version),
+            ).fetchone()
+            if exists is None:
+                raise ValueError("约束版本不存在")
+            connection.execute(
+                "UPDATE constraint_versions SET release_status = 'superseded' WHERE policy_key = ? AND release_status = 'published'",
+                (asset_key,),
+            )
+            connection.execute(
+                "UPDATE constraint_versions SET release_status = 'published', published_at = ? WHERE policy_key = ? AND version = ?",
+                (now, asset_key, version),
+            )
+            connection.execute(
+                "UPDATE constraint_profiles SET lifecycle_status = 'published', published_version = ?, updated_at = ? WHERE policy_key = ?",
+                (version, now, asset_key),
+            )
+            return
         exists = connection.execute(
             "SELECT 1 FROM knowledge_versions WHERE card_id = ? AND version = ?",
             (asset_key, version),
@@ -202,11 +251,11 @@ class ReleaseManager:
         )
 
     def _current_version(self, asset_type: str, asset_key: str) -> str:
-        table, key = (
-            ("prompt_definitions", "prompt_key")
-            if asset_type == "prompt"
-            else ("knowledge_cards", "card_id")
-        )
+        table, key = {
+            "prompt": ("prompt_definitions", "prompt_key"),
+            "knowledge": ("knowledge_cards", "card_id"),
+            "constraint": ("constraint_profiles", "policy_key"),
+        }[asset_type]
         with self.store.connect() as connection:
             row = connection.execute(
                 f"SELECT published_version FROM {table} WHERE {key} = ?", (asset_key,)
@@ -218,6 +267,8 @@ class ReleaseManager:
     def _target(self, asset_type: str, asset_key: str, version: str) -> Optional[Dict[str, Any]]:
         if asset_type == "prompt":
             return self.assets.get_prompt_version(asset_key, version)
+        if asset_type == "constraint":
+            return self.constraints.get_version(asset_key, version) if self.constraints else None
         card = self.assets.get_knowledge(asset_key)
         if card is None:
             return None

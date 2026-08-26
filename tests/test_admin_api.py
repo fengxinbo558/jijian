@@ -154,6 +154,93 @@ class AdminAPITests(unittest.TestCase):
         self.assertEqual(updated["connection_state"], "configured_not_tested")
         self.assertNotIn("NEVER-RETURN-THIS", json.dumps(updated, ensure_ascii=False))
 
+    def test_retrieval_test_uses_published_knowledge_without_creating_incident(self):
+        _status, before = self.request_json("/api/admin/summary")
+        status, index = self.request_json("/api/admin/rag-index")
+        self.assertEqual(status, 200)
+        self.assertEqual(index["published_cards"], 48)
+        self.assertFalse(index["pretrained_semantic_model"])
+
+        status, result = self.request_json(
+            "/api/admin/retrieval-tests",
+            {
+                "text": "nvme0 I/O timeout blk_update_request",
+                "domain": "storage",
+                "device_type": "server",
+            },
+        )
+        self.assertEqual(status, 201)
+        self.assertFalse(result["production_incident_created"])
+        self.assertEqual(result["coverage"], "matched")
+        self.assertTrue(result["hits"])
+        self.assertTrue(all(item["domain"] == "storage" for item in result["hits"]))
+
+        _status, after = self.request_json("/api/admin/summary")
+        self.assertEqual(after["incidents"], before["incidents"])
+        self.assertEqual(after["retrieval_test_runs"], before["retrieval_test_runs"] + 1)
+        status, activity = self.request_json("/api/admin/activity")
+        self.assertEqual(status, 200)
+        retrieval = next(item for item in activity["items"] if item["id"] == result["id"])
+        self.assertEqual(retrieval["activity_type"], "retrieval_test")
+        self.assertFalse(retrieval["details"]["production_incident_created"])
+
+    def test_constraint_draft_can_be_tested_published_and_rolled_back(self):
+        status, policy = self.request_json("/api/admin/constraints/investigation-policy")
+        self.assertEqual(status, 200)
+        self.assertEqual(policy["published_version"], "1.0.0")
+        self.assertTrue(all(item["editable"] is False for item in policy["hard_guards"]))
+
+        settings = dict(policy["published"]["settings"])
+        settings["retrieval_top_k"] = 3
+        status, draft = self.request_json(
+            "/api/admin/constraints/investigation-policy/versions",
+            {"version": "1.1.0", "settings": settings},
+        )
+        self.assertEqual(status, 201)
+        self.assertEqual(draft["release_status"], "draft")
+
+        status, release = self.request_json(
+            "/api/admin/releases/test",
+            {
+                "asset_type": "constraint",
+                "asset_key": "investigation-policy",
+                "version": "1.1.0",
+            },
+        )
+        self.assertEqual(status, 201)
+        self.assertEqual(release["status"], "tested")
+        self.request_json(f"/api/admin/releases/{release['id']}/prepare", {})
+        status, published = self.request_json(
+            f"/api/admin/releases/{release['id']}/publish", {"confirmed_online": True}
+        )
+        self.assertEqual(status, 200)
+        self.assertEqual(published["status"], "published")
+
+        _status, index = self.request_json("/api/admin/rag-index")
+        self.assertEqual(index["constraint_version"], "1.1.0")
+        _status, rolled_back = self.request_json(
+            f"/api/admin/releases/{release['id']}/rollback", {}
+        )
+        self.assertEqual(rolled_back["status"], "rolled_back")
+        _status, policy = self.request_json("/api/admin/constraints/investigation-policy")
+        self.assertEqual(policy["published_version"], "1.0.0")
+
+    def test_non_admin_cannot_read_ai_control_console(self):
+        for path in (
+            "/api/admin/summary",
+            "/api/admin/constraints",
+            "/api/admin/retrieval-tests",
+            "/api/admin/rag-index",
+        ):
+            request = urllib.request.Request(
+                self.base + path,
+                headers={"X-IDCAI-Role": "onsite_operator"},
+                method="GET",
+            )
+            with self.assertRaises(urllib.error.HTTPError) as raised:
+                urllib.request.urlopen(request, timeout=3)
+            self.assertEqual(raised.exception.code, 403)
+
 
 if __name__ == "__main__":
     unittest.main()
