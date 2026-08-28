@@ -32,7 +32,7 @@ async function incidentCount(page) {
     await page.getByRole("button", { name: /AI控制台/ }).click();
     await page.locator("#adminView:not([hidden])").waitFor();
     if (!page.url().includes("#ai-control=")) throw new Error("AI console does not have an independent route");
-    if ((await page.locator("[data-admin-tab]").count()) !== 9) throw new Error("AI console does not expose nine modules");
+    if ((await page.locator("[data-admin-tab]").count()) !== 11) throw new Error("AI console does not expose eleven modules");
     if (!(await page.locator("#adminSummary").innerText()).includes("48")) throw new Error("published knowledge count is missing");
     const rootSize = await page.evaluate(() => ({ scroll: document.documentElement.scrollHeight, client: document.documentElement.clientHeight }));
     if (rootSize.scroll !== rootSize.client) throw new Error(`AI console causes page scroll: ${JSON.stringify(rootSize)}`);
@@ -41,7 +41,7 @@ async function incidentCount(page) {
       await page.locator("#knowledgeList .asset-row").first().waitFor();
       await page.screenshot({ path: "/tmp/idc-ai-control-console-live.png", fullPage: true });
       if (consoleErrors.length) throw new Error(`browser console errors: ${consoleErrors.join(" | ")}`);
-      process.stdout.write("Live AI control console passed read-only checks: independent route, nine modules, published knowledge, fixed viewport.\n");
+      process.stdout.write("Live AI control console passed read-only checks: independent route, eleven modules, published knowledge, fixed viewport.\n");
       return;
     }
 
@@ -79,7 +79,7 @@ async function incidentCount(page) {
 
     await page.getByRole("button", { name: "返回故障中心" }).click();
     await page.selectOption("#roleSelect", "onsite_operator");
-    await page.getByRole("button", { name: /AI控制台/ }).click();
+    if (!(await page.locator("#adminRailButton").isHidden())) throw new Error("onsite role can still see the AI console entry");
     if (await page.locator("#adminView:not([hidden])").count()) throw new Error("onsite role opened the AI console");
 
     const mobile = await browser.newPage({ viewport: { width: 390, height: 844 }, isMobile: true });
@@ -95,7 +95,7 @@ async function incidentCount(page) {
     await mobile.close();
 
     if (consoleErrors.length) throw new Error(`browser console errors: ${consoleErrors.join(" | ")}`);
-    process.stdout.write("AI control console passed: independent route, nine modules, real retrieval, hard guards, release entry, role gate, desktop and mobile.\n");
+    process.stdout.write("AI control console passed: independent route, ten modules, real retrieval, hard guards, release entry, role gate, desktop and mobile.\n");
   } finally {
     await browser.close();
   }

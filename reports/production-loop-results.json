@@ -1,6 +1,6 @@
 {
-  "started_at": "2026-08-25T09:42:12+00:00",
-  "finished_at": "2026-08-25T09:42:12+00:00",
+  "started_at": "2026-08-25T15:01:26+00:00",
+  "finished_at": "2026-08-25T15:01:27+00:00",
   "summary": {
     "cases_passed": 12,
     "cases_total": 12,
@@ -50,8 +50,8 @@
       "checks": [
         {
           "name": "更新同一告警",
-          "actual": "ALT-02B2B8CDF927",
-          "expected": "ALT-02B2B8CDF927",
+          "actual": "ALT-2F6280FB2DB3",
+          "expected": "ALT-2F6280FB2DB3",
           "passed": true
         },
         {
@@ -254,8 +254,8 @@
       "checks": [
         {
           "name": "持续期内去重",
-          "actual": "ALT-F9F89DB227D8",
-          "expected": "ALT-F9F89DB227D8",
+          "actual": "ALT-7EE6290C0F88",
+          "expected": "ALT-7EE6290C0F88",
           "passed": true
         },
         {

@@ -793,6 +793,192 @@ class IncidentStore:
                 );
                 CREATE INDEX IF NOT EXISTS idx_drill_steps_run
                     ON drill_steps(run_id, id);
+
+                CREATE TABLE IF NOT EXISTS ai_asset_metadata (
+                    asset_type TEXT NOT NULL,
+                    asset_key TEXT NOT NULL,
+                    title TEXT NOT NULL,
+                    domain TEXT NOT NULL,
+                    fault_family TEXT NOT NULL,
+                    owner TEXT NOT NULL,
+                    risk_level TEXT NOT NULL,
+                    tags_json TEXT NOT NULL,
+                    catalog_status TEXT NOT NULL,
+                    reviewed_at TEXT NOT NULL,
+                    review_due_at TEXT NOT NULL,
+                    created_by TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    PRIMARY KEY(asset_type, asset_key)
+                );
+                CREATE INDEX IF NOT EXISTS idx_ai_asset_metadata_filter
+                    ON ai_asset_metadata(asset_type, domain, catalog_status, updated_at DESC);
+                CREATE INDEX IF NOT EXISTS idx_ai_asset_metadata_review
+                    ON ai_asset_metadata(review_due_at, catalog_status);
+
+                CREATE TABLE IF NOT EXISTS ai_asset_version_metadata (
+                    asset_type TEXT NOT NULL,
+                    asset_key TEXT NOT NULL,
+                    version TEXT NOT NULL,
+                    applies_to_json TEXT NOT NULL,
+                    source_refs_json TEXT NOT NULL,
+                    content_fingerprint TEXT NOT NULL,
+                    risk_level TEXT NOT NULL,
+                    reviewed_by TEXT NOT NULL,
+                    review_method TEXT NOT NULL,
+                    effective_at TEXT NOT NULL,
+                    governance_json TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    PRIMARY KEY(asset_type, asset_key, version)
+                );
+                CREATE INDEX IF NOT EXISTS idx_ai_asset_version_fingerprint
+                    ON ai_asset_version_metadata(asset_type, content_fingerprint);
+
+                CREATE TABLE IF NOT EXISTS ai_asset_relations (
+                    id TEXT PRIMARY KEY,
+                    source_type TEXT NOT NULL,
+                    source_key TEXT NOT NULL,
+                    source_version TEXT NOT NULL,
+                    relation_type TEXT NOT NULL,
+                    target_type TEXT NOT NULL,
+                    target_key TEXT NOT NULL,
+                    target_version TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    basis_json TEXT NOT NULL,
+                    created_by TEXT NOT NULL,
+                    created_at TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_ai_relations_source
+                    ON ai_asset_relations(source_type, source_key, source_version);
+                CREATE INDEX IF NOT EXISTS idx_ai_relations_target
+                    ON ai_asset_relations(target_type, target_key, target_version);
+
+                CREATE TABLE IF NOT EXISTS ai_governance_issues (
+                    id TEXT PRIMARY KEY,
+                    issue_type TEXT NOT NULL,
+                    severity TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    primary_type TEXT NOT NULL,
+                    primary_key TEXT NOT NULL,
+                    primary_version TEXT NOT NULL,
+                    related_type TEXT NOT NULL,
+                    related_key TEXT NOT NULL,
+                    related_version TEXT NOT NULL,
+                    detection_method TEXT NOT NULL,
+                    evidence_json TEXT NOT NULL,
+                    resolution_json TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    resolved_at TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_ai_governance_issue_queue
+                    ON ai_governance_issues(status, issue_type, severity, created_at DESC);
+                CREATE INDEX IF NOT EXISTS idx_ai_governance_issue_asset
+                    ON ai_governance_issues(primary_type, primary_key, primary_version, status);
+
+                CREATE TABLE IF NOT EXISTS ai_import_batches (
+                    id TEXT PRIMARY KEY,
+                    source_type TEXT NOT NULL,
+                    source_label TEXT NOT NULL,
+                    format TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    summary_json TEXT NOT NULL,
+                    created_by TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_ai_import_batches_created
+                    ON ai_import_batches(created_at DESC);
+
+                CREATE TABLE IF NOT EXISTS ai_import_items (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    batch_id TEXT NOT NULL,
+                    item_index INTEGER NOT NULL,
+                    status TEXT NOT NULL,
+                    candidate_json TEXT NOT NULL,
+                    content_fingerprint TEXT NOT NULL,
+                    matched_asset_type TEXT NOT NULL,
+                    matched_asset_key TEXT NOT NULL,
+                    matched_version TEXT NOT NULL,
+                    issues_json TEXT NOT NULL,
+                    error_message TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    FOREIGN KEY(batch_id) REFERENCES ai_import_batches(id),
+                    UNIQUE(batch_id, item_index)
+                );
+                CREATE INDEX IF NOT EXISTS idx_ai_import_items_batch
+                    ON ai_import_items(batch_id, item_index);
+
+                CREATE TABLE IF NOT EXISTS ai_source_versions (
+                    source_key TEXT NOT NULL,
+                    version TEXT NOT NULL,
+                    content_json TEXT NOT NULL,
+                    content_fingerprint TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    PRIMARY KEY(source_key, version)
+                );
+
+                CREATE TABLE IF NOT EXISTS ai_asset_feedback (
+                    id TEXT PRIMARY KEY,
+                    asset_type TEXT NOT NULL,
+                    asset_key TEXT NOT NULL,
+                    version TEXT NOT NULL,
+                    incident_id TEXT NOT NULL,
+                    outcome TEXT NOT NULL,
+                    note TEXT NOT NULL,
+                    created_by TEXT NOT NULL,
+                    created_at TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_ai_asset_feedback_asset
+                    ON ai_asset_feedback(asset_type, asset_key, version, created_at DESC);
+
+                CREATE TABLE IF NOT EXISTS ai_runtime_snapshots (
+                    id TEXT PRIMARY KEY,
+                    run_type TEXT NOT NULL,
+                    run_id TEXT NOT NULL UNIQUE,
+                    knowledge_version TEXT NOT NULL,
+                    prompt_versions_json TEXT NOT NULL,
+                    constraint_versions_json TEXT NOT NULL,
+                    model_json TEXT NOT NULL,
+                    capabilities_json TEXT NOT NULL,
+                    created_at TEXT NOT NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS ai_test_case_definitions (
+                    case_key TEXT PRIMARY KEY,
+                    name TEXT NOT NULL,
+                    domain TEXT NOT NULL,
+                    lifecycle_status TEXT NOT NULL,
+                    published_version TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS ai_test_case_versions (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    case_key TEXT NOT NULL,
+                    version TEXT NOT NULL,
+                    release_status TEXT NOT NULL,
+                    input_json TEXT NOT NULL,
+                    expected_json TEXT NOT NULL,
+                    created_by TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    published_at TEXT NOT NULL,
+                    FOREIGN KEY(case_key) REFERENCES ai_test_case_definitions(case_key),
+                    UNIQUE(case_key, version)
+                );
+
+                CREATE TABLE IF NOT EXISTS ai_governance_audit (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    action TEXT NOT NULL,
+                    actor TEXT NOT NULL,
+                    asset_type TEXT NOT NULL,
+                    asset_key TEXT NOT NULL,
+                    details_json TEXT NOT NULL,
+                    created_at TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_ai_governance_audit_created
+                    ON ai_governance_audit(created_at DESC);
                 """
             )
             columns = {
@@ -835,6 +1021,13 @@ class IncidentStore:
                 """
                 INSERT OR IGNORE INTO schema_migrations (version, name, applied_at)
                 VALUES (3, 'ai_multiplatform_lab_foundation', ?)
+                """,
+                (utc_now(),),
+            )
+            connection.execute(
+                """
+                INSERT OR IGNORE INTO schema_migrations (version, name, applied_at)
+                VALUES (6, 'ai_asset_governance', ?)
                 """,
                 (utc_now(),),
             )

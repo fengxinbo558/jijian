@@ -1,0 +1,136 @@
+{
+  "suite_version": "suite-v1",
+  "name": "首批生产近似沙盒盲测",
+  "description": "公开真实日志、单点故障、跨平台连锁、冲突缺失、正常误报与安全责任的固定比例测试集。",
+  "mix": {
+    "public_real_log": 30,
+    "single_fault": 35,
+    "cross_platform_cascade": 25,
+    "missing_or_conflicting": 15,
+    "normal_or_false_alarm": 10,
+    "safety_responsibility": 5
+  },
+  "templates": [
+    {
+      "id": "network-link",
+      "domain": "network",
+      "source": "monitor",
+      "title": "网络端口出现异常信号",
+      "summary": "交换机端口反复抖动并出现CRC错误",
+      "raw_text": "interface {port} link flap; CRC errors 4281; Rx Power -18.7 dBm",
+      "device_type": "switch",
+      "expected_category": "network",
+      "requires_onsite": true
+    },
+    {
+      "id": "disk-io",
+      "domain": "hardware",
+      "source": "log",
+      "title": "服务器存储路径出现异常信号",
+      "summary": "服务器出现持续I/O错误",
+      "raw_text": "kernel: blk_update_request: I/O error, dev nvme0n1; NVMe media_errors=12",
+      "device_type": "server",
+      "expected_category": "hardware",
+      "requires_onsite": true
+    },
+    {
+      "id": "memory-ecc",
+      "domain": "hardware",
+      "source": "log",
+      "title": "服务器内存通道出现异常信号",
+      "summary": "EDAC报告不可纠正内存错误",
+      "raw_text": "EDAC MC0: uncorrected memory error on DIMM B0; Machine Check",
+      "device_type": "server",
+      "expected_category": "hardware",
+      "requires_onsite": true
+    },
+    {
+      "id": "system-oom",
+      "domain": "system",
+      "source": "log",
+      "title": "Linux出现资源压力信号",
+      "summary": "业务进程被系统终止",
+      "raw_text": "kernel: Out of memory: Killed process 9912 (order-api) by oom-killer",
+      "device_type": "server",
+      "expected_category": "system",
+      "requires_onsite": false
+    },
+    {
+      "id": "system-panic",
+      "domain": "system",
+      "source": "log",
+      "title": "Linux出现稳定性异常信号",
+      "summary": "服务器发生内核锁死",
+      "raw_text": "watchdog: BUG: soft lockup - CPU#4 stuck; Kernel panic - not syncing",
+      "device_type": "server",
+      "expected_category": "system",
+      "requires_onsite": false
+    },
+    {
+      "id": "facility-temperature",
+      "domain": "facility",
+      "source": "monitor",
+      "title": "机房环境温度出现异常信号",
+      "summary": "冷通道温度持续升高",
+      "raw_text": "cooling failure alarm; temperature high 34.2C; fan full speed",
+      "device_type": "facility",
+      "expected_category": "facility",
+      "requires_onsite": true
+    },
+    {
+      "id": "facility-power",
+      "domain": "facility",
+      "source": "monitor",
+      "title": "机房供电路径出现异常信号",
+      "summary": "供电冗余状态发生变化",
+      "raw_text": "utility feed A lost; feed B healthy; PDU redundancy changed",
+      "device_type": "facility",
+      "expected_category": "facility",
+      "requires_onsite": true
+    },
+    {
+      "id": "application-port",
+      "domain": "application",
+      "source": "log",
+      "title": "服务启动过程出现异常信号",
+      "summary": "服务启动失败",
+      "raw_text": "systemd: Failed to start order-api: Address already in use 0.0.0.0:8080",
+      "device_type": "server",
+      "expected_category": "application",
+      "requires_onsite": false
+    },
+    {
+      "id": "application-dependency",
+      "domain": "application",
+      "source": "log",
+      "title": "应用依赖出现异常信号",
+      "summary": "服务访问依赖持续失败",
+      "raw_text": "upstream connection timed out; DNS lookup failed; dependency unavailable",
+      "device_type": "server",
+      "expected_category": "application",
+      "requires_onsite": false
+    },
+    {
+      "id": "unknown-signal",
+      "domain": "unknown",
+      "source": "monitor",
+      "title": "收到尚未覆盖的异常信号",
+      "summary": "监控报告状态偏离基线",
+      "raw_text": "health probe deviation code=Z17; vendor status requires interpretation",
+      "device_type": "server",
+      "expected_category": "unknown",
+      "requires_onsite": false
+    },
+    {
+      "id": "normal-heartbeat",
+      "domain": "normal",
+      "source": "monitor",
+      "title": "正常状态与恢复信号",
+      "summary": "设备健康检查正常",
+      "raw_text": "health check passed; link up; temperature 22C; no active alarms",
+      "device_type": "server",
+      "expected_category": "unknown",
+      "requires_onsite": false
+    }
+  ]
+}

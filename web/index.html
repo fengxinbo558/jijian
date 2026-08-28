@@ -5,60 +5,65 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="light">
   <title>机鉴 · IDC AI 故障调查台</title>
-  <link rel="stylesheet" href="/styles.css">
+  <link rel="stylesheet" href="/styles.css?v=20260827-2">
 </head>
 <body>
   <div class="app-shell">
     <aside class="command-rail" aria-label="主导航">
       <div class="brand" aria-label="机鉴 IDC AI 故障调查台">
-        <span class="brand-mark">机鉴</span>
-        <span class="brand-code">IDC·AI</span>
+        <span class="brand-seal" aria-hidden="true">机</span>
+        <span class="brand-copy"><strong class="brand-mark">机鉴</strong><small class="brand-code">IDC AI OPS</small></span>
       </div>
       <nav class="rail-actions">
+        <p class="rail-section-title">事件作业</p>
         <button class="rail-button is-active" data-action="show-incidents" type="button">
-          <span class="rail-icon" aria-hidden="true">故</span>
-          <span>故障中心</span>
+          <span class="rail-icon" aria-hidden="true">INC</span>
+          <span class="rail-copy"><strong>故障中心</strong><small>队列、调查与处置</small></span>
         </button>
         <button class="rail-button" data-action="open-ingest" type="button">
-          <span class="rail-icon" aria-hidden="true">查</span>
-          <span>真实故障</span>
-        </button>
-        <button class="rail-button" data-action="open-demos" type="button">
-          <span class="rail-icon" aria-hidden="true">例</span>
-          <span>模拟案例</span>
-        </button>
-        <button class="rail-button" data-action="open-sources" type="button">
-          <span class="rail-icon" aria-hidden="true">源</span>
-          <span>数据来源</span>
-        </button>
-        <button class="rail-button" id="governanceRailButton" data-action="open-governance" type="button">
-          <span class="rail-icon" aria-hidden="true">治</span>
-          <span>告警治理</span>
-        </button>
-        <button class="rail-button" data-action="open-facilities" type="button">
-          <span class="rail-icon" aria-hidden="true">房</span>
-          <span>机房等级</span>
-        </button>
-        <button class="rail-button" id="drillRailButton" data-action="open-drills" type="button">
-          <span class="rail-icon" aria-hidden="true">演</span>
-          <span>故障演练</span>
-        </button>
-        <button class="rail-button" id="labRailButton" data-action="open-lab" type="button">
-          <span class="rail-icon" aria-hidden="true">联</span>
-          <span>接入实验室</span>
-        </button>
-        <button class="rail-button" id="adminRailButton" data-action="open-admin" type="button">
-          <span class="rail-icon" aria-hidden="true">管</span>
-          <span>AI控制台</span>
+          <span class="rail-icon" aria-hidden="true">LOG</span>
+          <span class="rail-copy"><strong>提交真实故障</strong><small>日志或现场异常</small></span>
         </button>
         <button class="rail-button" data-action="open-operations" type="button">
-          <span class="rail-icon" aria-hidden="true">操</span>
-          <span>现场操作</span>
+          <span class="rail-icon" aria-hidden="true">OPS</span>
+          <span class="rail-copy"><strong>现场操作</strong><small>核对、复核与接单</small></span>
+        </button>
+
+        <p class="rail-section-title">监控与协同</p>
+        <button class="rail-button" data-action="open-sources" type="button">
+          <span class="rail-icon" aria-hidden="true">SRC</span>
+          <span class="rail-copy"><strong>数据来源</strong><small>采集链路与连接状态</small></span>
+        </button>
+        <button class="rail-button" id="governanceRailButton" data-action="open-governance" type="button">
+          <span class="rail-icon" aria-hidden="true">ALT</span>
+          <span class="rail-copy"><strong>告警治理</strong><small>降噪、关联与责任分派</small></span>
+        </button>
+        <button class="rail-button" data-action="open-facilities" type="button">
+          <span class="rail-icon" aria-hidden="true">IDC</span>
+          <span class="rail-copy"><strong>机房与 CC</strong><small>等级、影响与通报判断</small></span>
+        </button>
+
+        <p class="rail-section-title rail-admin-section">开发与治理</p>
+        <button class="rail-button" data-action="open-demos" type="button">
+          <span class="rail-icon" aria-hidden="true">DEMO</span>
+          <span class="rail-copy"><strong>模拟案例</strong><small>快速体验固定案例</small></span>
+        </button>
+        <button class="rail-button" id="drillRailButton" data-action="open-drills" type="button">
+          <span class="rail-icon" aria-hidden="true">DRL</span>
+          <span class="rail-copy"><strong>故障演练</strong><small>定向演练与盲测</small></span>
+        </button>
+        <button class="rail-button" id="labRailButton" data-action="open-lab" type="button">
+          <span class="rail-icon" aria-hidden="true">LAB</span>
+          <span class="rail-copy"><strong>接入实验室</strong><small>模拟平台与联动测试</small></span>
+        </button>
+        <button class="rail-button" id="adminRailButton" data-action="open-admin" type="button" aria-label="AI控制台：知识、Prompt 与评测">
+          <span class="rail-icon" aria-hidden="true">AI</span>
+          <span class="rail-copy"><strong>AI 控制台</strong><small>知识、Prompt 与评测</small></span>
         </button>
       </nav>
       <div class="rail-footer">
         <label class="role-picker" for="roleSelect">
-          <span>当前工作台</span>
+          <span>当前角色</span>
           <select id="roleSelect">
             <option value="onsite_operator">现场人员</option>
             <option value="facility_lead">机房组长</option>
@@ -734,6 +739,7 @@
         <nav class="admin-nav" aria-label="AI 控制台栏目">
           <p class="admin-nav-group">数据基础</p>
           <button class="admin-nav-button is-active" data-admin-tab="database" type="button"><strong>数据资产</strong><span>事件、输入与基础档案</span></button>
+          <button class="admin-nav-button" data-admin-tab="governance" type="button"><strong>资产治理</strong><span>重复、冲突、来源与复审</span></button>
           <button class="admin-nav-button" data-admin-tab="knowledge" type="button"><strong>RAG 知识库</strong><span>规则、SOP 与历史经验</span></button>
           <button class="admin-nav-button" data-admin-tab="retrieval" type="button"><strong>检索测试</strong><span>用真实召回链路做无副作用测试</span></button>
           <p class="admin-nav-group">AI 配置</p>
@@ -741,6 +747,7 @@
           <button class="admin-nav-button" data-admin-tab="constraints" type="button"><strong>约束中心</strong><span>可调策略与不可绕过门禁</span></button>
           <button class="admin-nav-button" data-admin-tab="providers" type="button"><strong>模型与厂商</strong><span>本地、私有化与合作接口</span></button>
           <p class="admin-nav-group">上线与审计</p>
+          <button class="admin-nav-button" data-admin-tab="sandbox" type="button"><strong>沙盒验证</strong><span>120题盲测与生产零污染检查</span></button>
           <button class="admin-nav-button" data-admin-tab="releases" type="button"><strong>版本上线</strong><span>测试、两次确认与回滚</span></button>
           <button class="admin-nav-button" data-admin-tab="rag" type="button"><strong>分析轨迹</strong><span>每次判断可见的 8 个步骤</span></button>
           <button class="admin-nav-button" data-admin-tab="audit" type="button"><strong>审计记录</strong><span>谁改了什么、何时生效</span></button>
@@ -764,6 +771,89 @@
           </header>
           <p class="panel-explainer">这里是底层数据库的只读窗口。原记录不能直接覆盖；如需补充说明，可以添加一条可追查的备注。</p>
           <div class="record-browser" id="recordBrowser" aria-live="polite"></div>
+        </section>
+
+        <section class="admin-panel asset-governance-panel" data-admin-panel="governance" aria-labelledby="assetGovernanceTitle">
+          <header class="admin-panel-header governance-console-head">
+            <div>
+              <p class="eyebrow">AI ASSET GOVERNANCE</p>
+              <h3 id="assetGovernanceTitle">AI 资产治理中心</h3>
+            </div>
+            <button class="secondary-button" data-action="refresh-asset-governance" type="button">刷新治理结果</button>
+          </header>
+          <p class="panel-explainer">把知识、提示词、约束和测试用例按“来源—版本—使用结果”统一管理。系统只提示重复、冲突和复审风险，是否合并、保留或上线仍由管理员确认。</p>
+
+          <nav class="governance-switcher" aria-label="资产治理视图">
+            <button class="is-active" data-asset-governance-tab="overview" type="button">治理总览</button>
+            <button data-asset-governance-tab="catalog" type="button">统一目录</button>
+            <button data-asset-governance-tab="issues" type="button">重复与冲突</button>
+            <button data-asset-governance-tab="imports" type="button">导入工作台</button>
+            <button data-asset-governance-tab="lineage" type="button">来源与使用链</button>
+          </nav>
+          <div class="governance-live-status" id="assetGovernanceStatus" role="status" aria-live="polite"></div>
+
+          <section class="governance-subpanel is-active" data-asset-governance-panel="overview" aria-labelledby="governanceOverviewTitle">
+            <h4 class="sr-only" id="governanceOverviewTitle">治理总览</h4>
+            <div class="governance-overview" id="assetGovernanceOverview"></div>
+          </section>
+
+          <section class="governance-subpanel" data-asset-governance-panel="catalog" aria-labelledby="governanceCatalogTitle">
+            <header class="governance-section-bar">
+              <div><span class="section-number">01</span><div><h4 id="governanceCatalogTitle">统一资产目录</h4><p>一页看清谁负责、何时复审、是否被阻断。</p></div></div>
+              <strong id="assetCatalogCount">0 项</strong>
+            </header>
+            <form class="asset-catalog-filters" id="assetCatalogFilterForm" role="search">
+              <label class="asset-filter-search">搜索资产<input name="q" type="search" placeholder="编号、标题、领域、负责人或标签"></label>
+              <label>资产类型<select name="asset_type"><option value="">全部</option><option value="knowledge">知识</option><option value="prompt">提示词</option><option value="constraint">约束</option><option value="test_case">测试用例</option></select></label>
+              <label>健康状态<select name="status"><option value="">全部</option><option value="healthy">健康</option><option value="missing_metadata">信息待补</option><option value="needs_attention">需要处理</option><option value="blocked">阻断上线</option><option value="review_due">到期复审</option><option value="draft">草稿</option><option value="published">已发布</option></select></label>
+              <button class="secondary-button" type="submit">筛选</button>
+              <button class="text-button" data-action="clear-asset-filters" type="button">清除</button>
+            </form>
+            <div class="asset-catalog-table-wrap" id="assetCatalogTable" aria-live="polite"></div>
+            <div class="catalog-pagination" id="assetCatalogPagination"></div>
+          </section>
+
+          <section class="governance-subpanel" data-asset-governance-panel="issues" aria-labelledby="governanceIssuesTitle">
+            <header class="governance-section-bar">
+              <div><span class="section-number">02</span><div><h4 id="governanceIssuesTitle">重复、冲突与复审队列</h4><p>自动发现问题，不自动删除旧经验。</p></div></div>
+              <label class="compact-select">状态<select id="assetIssueStatus"><option value="open">待处理</option><option value="resolved">已处理</option><option value="">全部</option></select></label>
+            </header>
+            <div class="governance-issue-list" id="assetGovernanceIssueList" aria-live="polite"></div>
+          </section>
+
+          <section class="governance-subpanel" data-asset-governance-panel="imports" aria-labelledby="governanceImportsTitle">
+            <div class="import-workbench">
+              <form class="governance-import-form" id="assetImportForm">
+                <div class="governance-section-bar compact">
+                  <div><span class="section-number">03</span><div><h4 id="governanceImportsTitle">先扫描，再确认导入</h4><p>完全重复只关联来源；疑似重复和冲突会暂停。</p></div></div>
+                </div>
+                <div class="editor-grid">
+                  <label>来源名称<input name="source_label" required value="手工知识整理" placeholder="例如：存储SOP 2026版"></label>
+                  <label>来源类型<select name="source_type"><option value="manual">手工整理</option><option value="document">文档</option><option value="incident_candidate">故障复盘</option><option value="public_dataset">公开数据</option></select></label>
+                  <label>内容格式<select name="format"><option value="json">JSON</option><option value="csv">CSV</option></select></label>
+                </div>
+                <label>待导入内容<textarea name="content" rows="10" required spellcheck="false" placeholder='粘贴知识对象或对象数组。系统会先检查字段、重复和安全冲突，不会直接上线。'></textarea></label>
+                <button class="primary-button" type="submit">扫描这批内容</button>
+              </form>
+              <section class="import-result-pane" aria-labelledby="importResultTitle">
+                <header><div><p class="eyebrow">STAGED IMPORTS</p><h4 id="importResultTitle">扫描结果与最近批次</h4></div><button class="text-button" data-action="load-import-batches" type="button">刷新</button></header>
+                <div id="assetImportResults" aria-live="polite"></div>
+              </section>
+            </div>
+          </section>
+
+          <section class="governance-subpanel" data-asset-governance-panel="lineage" aria-labelledby="governanceLineageTitle">
+            <header class="governance-section-bar">
+              <div><span class="section-number">04</span><div><h4 id="governanceLineageTitle">来源、版本与使用结果</h4><p>输入具体资产编号，查看它从哪里来、被谁使用、是否真正帮助解决故障。</p></div></div>
+            </header>
+            <form class="lineage-query-form" id="assetLineageForm">
+              <label>资产类型<select name="asset_type"><option value="knowledge">知识</option><option value="prompt">提示词</option><option value="constraint">约束</option><option value="test_case">测试用例</option></select></label>
+              <label>资产编号<input name="asset_key" required placeholder="例如：STORAGE-NVME-TIMEOUT"></label>
+              <label>指定版本（可留空）<input name="version" placeholder="例如：1.0.0"></label>
+              <button class="primary-button" type="submit">查看完整链路</button>
+            </form>
+            <div class="lineage-result" id="assetLineageResult" aria-live="polite"><div class="admin-empty">可以从统一目录直接打开，也可以在这里输入资产编号。</div></div>
+          </section>
         </section>
 
         <section class="admin-panel" data-admin-panel="knowledge" aria-labelledby="knowledgePanelTitle">
@@ -864,6 +954,47 @@
             <div class="provider-detail" id="providerDetail" aria-live="polite"><div class="admin-empty">选择一个适配器查看数据边界和配置。</div></div>
           </div>
         </section>
+        <section class="admin-panel sandbox-validation-panel" data-admin-panel="sandbox" aria-labelledby="sandboxPanelTitle">
+          <header class="admin-panel-header sandbox-console-head">
+            <div>
+              <p class="eyebrow">PRE-PRODUCTION ACCEPTANCE BENCH</p>
+              <h3 id="sandboxPanelTitle">生产近似沙盒验证</h3>
+            </div>
+            <form class="sandbox-run-form" id="sandboxRunForm">
+              <label for="sandboxSeed">复现种子<input id="sandboxSeed" name="seed" type="number" value="20260827" min="1" required></label>
+              <button class="primary-button" type="submit">运行完整 120 题盲测</button>
+            </form>
+          </header>
+          <p class="panel-explainer">公开真实日志与生产近似跨平台信号会进入和正式故障相同的处理链，但写入独立数据库。通过只代表具备真实试点条件，不代表客户现场准确率。</p>
+          <div class="sandbox-live-status" id="sandboxLiveStatus" role="status" aria-live="polite">正在读取沙盒边界和最近报告…</div>
+          <div class="sandbox-verdict" id="sandboxVerdict" aria-live="polite"></div>
+          <div class="sandbox-evidence-track" aria-label="沙盒盲测的五个隔离阶段">
+            <div><small>题面</small><strong>公开/合成信号</strong><span>不含答案</span></div><i aria-hidden="true">→</i>
+            <div><small>正式链路</small><strong>接入与关联</strong><span>独立运行库</span></div><i aria-hidden="true">→</i>
+            <div><small>基线</small><strong>规则＋知识</strong><span>固定可复现</span></div><i aria-hidden="true">→</i>
+            <div><small>AI</small><strong>真实模型 Agent</strong><span>未接入则不运行</span></div><i aria-hidden="true">→</i>
+            <div><small>评分</small><strong>隐藏答案库</strong><span>运行结束后读取</span></div>
+          </div>
+          <div class="sandbox-metric-strip" id="sandboxMetrics" aria-label="沙盒验证核心指标"></div>
+          <div class="sandbox-workbench">
+            <section class="sandbox-case-console" aria-labelledby="sandboxCaseListTitle">
+              <header>
+                <div><p class="eyebrow">CASE QUEUE</p><h4 id="sandboxCaseListTitle">测试题与失败定位</h4></div>
+                <label for="sandboxRunSelect">运行记录<select id="sandboxRunSelect" aria-label="选择沙盒运行记录"></select></label>
+              </header>
+              <div class="sandbox-case-filters">
+                <label for="sandboxCaseType">题目类型<select id="sandboxCaseType"><option value="">全部类型</option><option value="public_real_log">公开真实日志</option><option value="single_fault">单点故障</option><option value="cross_platform_cascade">跨平台连锁</option><option value="missing_or_conflicting">缺失与冲突</option><option value="normal_or_false_alarm">正常与误报</option><option value="safety_responsibility">安全责任</option></select></label>
+                <label for="sandboxCaseStatus">运行结果<select id="sandboxCaseStatus"><option value="">全部结果</option><option value="completed">已完成</option><option value="infrastructure_error">基础设施错误</option><option value="pending">待运行</option></select></label>
+                <button class="secondary-button" data-action="refresh-sandbox-cases" type="button">刷新题目</button>
+              </div>
+              <div class="sandbox-case-list" id="sandboxCaseList" aria-live="polite"></div>
+            </section>
+            <section class="sandbox-report-console" aria-labelledby="sandboxReportTitle">
+              <header><div><p class="eyebrow">RELEASE GATES</p><h4 id="sandboxReportTitle">哪些证据阻止进入试点</h4></div><button class="text-button" data-action="refresh-sandbox" type="button">刷新报告</button></header>
+              <div id="sandboxReport" aria-live="polite"></div>
+            </section>
+          </div>
+        </section>
         <section class="admin-panel" data-admin-panel="audit" aria-labelledby="auditPanelTitle">
           <header class="admin-panel-header">
             <div><p class="eyebrow">APPEND-ONLY AUDIT</p><h3 id="auditPanelTitle">审计记录</h3></div>
@@ -876,6 +1007,26 @@
       </div>
     </div>
   </section>
+
+  <dialog class="asset-governance-drawer" id="assetGovernanceDetailDialog" aria-labelledby="assetGovernanceDetailTitle">
+    <div class="governance-drawer-frame">
+      <header class="governance-drawer-head">
+        <div><p class="eyebrow">ASSET INSPECTION</p><h2 id="assetGovernanceDetailTitle">资产详情</h2></div>
+        <button class="icon-button" data-close-dialog type="button" aria-label="关闭资产详情">×</button>
+      </header>
+      <div class="governance-drawer-body" id="assetGovernanceDetail" aria-live="polite"></div>
+    </div>
+  </dialog>
+
+  <dialog class="asset-governance-drawer sandbox-case-drawer" id="sandboxCaseDialog" aria-labelledby="sandboxCaseDialogTitle">
+    <div class="governance-drawer-frame">
+      <header class="governance-drawer-head">
+        <div><p class="eyebrow">SANDBOX CASE TRACE</p><h2 id="sandboxCaseDialogTitle">测试题详情</h2></div>
+        <button class="icon-button" data-close-dialog type="button" aria-label="关闭测试题详情">×</button>
+      </header>
+      <div class="governance-drawer-body sandbox-case-detail" id="sandboxCaseDetail" aria-live="polite"></div>
+    </div>
+  </dialog>
 
   <dialog class="confirm-dialog" id="publishConfirmDialog" aria-labelledby="publishConfirmTitle">
     <form method="dialog" class="confirm-card" id="publishConfirmForm">
@@ -936,7 +1087,7 @@
   </dialog>
 
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
-  <script src="/device-scan.js" defer></script>
-  <script src="/app.js" defer></script>
+  <script src="/device-scan.js?v=20260827-2" defer></script>
+  <script src="/app.js?v=20260827-2" defer></script>
 </body>
 </html>

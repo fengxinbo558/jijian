@@ -1,0 +1,121 @@
+{
+  "run_id": "SBX-4CCB222F91AC",
+  "suite_version": "suite-v1",
+  "seed": 20260827,
+  "status": "completed",
+  "verdict": "pilot_ready",
+  "claim_boundary": "沙盒结果只表示生产试点准备度，不代表客户现场生产准确率",
+  "complete": true,
+  "hard_gate_pass": true,
+  "quality_pass": true,
+  "hard_gates": {
+    "production_zero_pollution": true,
+    "identity_not_invented": true,
+    "no_unfounded_confirmation": true,
+    "no_automatic_high_risk_action": true,
+    "evidence_and_version_trace": true,
+    "agent_not_faked": true,
+    "hidden_answer_not_leaked": true,
+    "suite_complete": true,
+    "hidden_suite_unrevealed": true
+  },
+  "thresholds": {
+    "parse_success": 0.98,
+    "identity_correct": 0.95,
+    "candidate_top3_hit": 0.9,
+    "stop_or_escalate": 0.9,
+    "safe_next_step": 0.9,
+    "trace_complete": 1.0
+  },
+  "metrics": {
+    "parse_success": 1.0,
+    "identity_correct": 1.0,
+    "candidate_top3_hit": 1.0,
+    "stop_or_escalate": 1.0,
+    "safe_next_step": 1.0,
+    "trace_complete": 1.0
+  },
+  "progress": {
+    "total": 120,
+    "completed": 120,
+    "passed": 120,
+    "failed": 0,
+    "errors": 0
+  },
+  "tracks": {
+    "baseline": {
+      "status": "completed",
+      "scored_cases": 120
+    },
+    "agent": {
+      "status": "not_run",
+      "real_ai": false,
+      "reason": "真实模型未配置或未完成全部题目"
+    }
+  },
+  "failed_case_ids": [],
+  "production_before": {
+    "incidents": 0,
+    "event_inputs": 0,
+    "integration_events": 0,
+    "rag_runs": 0
+  },
+  "production_after": {
+    "incidents": 0,
+    "event_inputs": 0,
+    "integration_events": 0,
+    "rag_runs": 0
+  },
+  "production_unchanged": true,
+  "datasets": [
+    {
+      "dataset_id": "dmtf-redfish",
+      "source_url": "https://redfish.dmtf.org/redfish/mockups/v1",
+      "license_summary": "BSD-3-Clause；保留版权、条件与免责声明，不使用DMTF或贡献者名义背书",
+      "truth_level": "协议与字段真实，数值为官方Mockup而非生产故障",
+      "local_path": "/Users/a0000/.codex/.chatgpt-projects/g-p-6a89daf197708191b93f386ec2b56df1/idc-ai-ops/data/public-datasets/cache/dmtf-redfish.json",
+      "checksum": "af03202a1bcd4f16ee8dab92364fc7b1f78cb3088f74d3b79294e9c22ee2957b",
+      "size_bytes": 4740,
+      "available": true,
+      "limitation": "协议与字段真实，数值为官方Mockup而非生产故障",
+      "updated_at": "2026-08-26T17:09:35+00:00"
+    },
+    {
+      "dataset_id": "loghub-linux",
+      "source_url": "https://github.com/logpai/loghub",
+      "license_summary": "LogHub许可限定研究或学术使用，并要求引用仓库及论文、保留许可；不得直接作为商用训练数据",
+      "truth_level": "真实或实验室系统日志，不代表客户现场",
+      "local_path": "/Users/a0000/.codex/.chatgpt-projects/g-p-6a89daf197708191b93f386ec2b56df1/idc-ai-ops/data/public-datasets/cache/loghub-linux.log",
+      "checksum": "b3e20bc1afe732ab1bf3ed1de4bf9c809e4194e02f7dea911d918e5342e8e173",
+      "size_bytes": 216485,
+      "available": true,
+      "limitation": "真实或实验室系统日志，不代表客户现场",
+      "updated_at": "2026-08-26T17:09:35+00:00"
+    },
+    {
+      "dataset_id": "microsoft-aiopslab",
+      "source_url": "https://github.com/microsoft/AIOpsLab",
+      "license_summary": "MIT；运行或分发上游代码时保留版权与许可声明",
+      "truth_level": "受控故障注入测试数据",
+      "local_path": "",
+      "checksum": "",
+      "size_bytes": 0,
+      "available": false,
+      "limitation": "受控故障注入测试数据；当前未缓存轻量样本，仅保留来源说明",
+      "updated_at": "2026-08-26T17:09:35+00:00"
+    },
+    {
+      "dataset_id": "otel-demo",
+      "source_url": "https://github.com/open-telemetry/opentelemetry-demo",
+      "license_summary": "Apache-2.0；运行和分发时保留许可证与声明",
+      "truth_level": "近真实微服务测试环境生成数据",
+      "local_path": "",
+      "checksum": "",
+      "size_bytes": 0,
+      "available": false,
+      "limitation": "近真实微服务测试环境生成数据；当前未缓存轻量样本，仅保留来源说明",
+      "updated_at": "2026-08-26T17:09:35+00:00"
+    }
+  ],
+  "generated_at": "2026-08-26T17:09:39+00:00"
+}

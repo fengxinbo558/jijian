@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 import uuid
-from typing import Any, Dict, Mapping, Optional
+from typing import TYPE_CHECKING, Any, Dict, Mapping, Optional
 
 from .assets import AssetRegistry
 from .constraints import ConstraintRegistry
 from .models import utc_now
 from .store import IncidentStore, _dump, _load
+
+if TYPE_CHECKING:
+    from .governance import AssetGovernanceService
 
 
 class ReleaseManager:
@@ -17,10 +20,12 @@ class ReleaseManager:
         store: IncidentStore,
         assets: AssetRegistry,
         constraints: Optional[ConstraintRegistry] = None,
+        governance: Optional["AssetGovernanceService"] = None,
     ) -> None:
         self.store = store
         self.assets = assets
         self.constraints = constraints
+        self.governance = governance
 
     def test_asset(self, payload: Mapping[str, Any], actor: str) -> Dict[str, Any]:
         asset_type = str(payload.get("asset_type") or "").strip()
@@ -34,6 +39,10 @@ class ReleaseManager:
             raise ValueError("待测试版本不存在")
         if target.get("release_status") != "draft":
             raise ValueError("只有草稿版本可以开始测试")
+        if self.governance is not None and self.governance.has_blocking_issues(
+            asset_type, asset_key, version
+        ):
+            raise ValueError("这个版本仍有未解决的阻断级治理问题，不能开始发布测试")
         checks = self._checks(asset_type, target)
         passed = all(item["passed"] for item in checks)
         if not passed:

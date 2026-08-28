@@ -72,7 +72,7 @@ class RequestHandler(BaseHTTPRequestHandler):
     def do_OPTIONS(self) -> None:  # noqa: N802
         self.send_response(HTTPStatus.NO_CONTENT)
         self._common_headers()
-        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+        self.send_header("Access-Control-Allow-Methods", "GET, POST, PATCH, OPTIONS")
         self.send_header(
             "Access-Control-Allow-Headers", "Content-Type, X-IDCAI-Role, X-IDCAI-User"
         )
@@ -86,6 +86,40 @@ class RequestHandler(BaseHTTPRequestHandler):
                 self._require_admin()
             if path == "/api/admin/summary":
                 self._json(HTTPStatus.OK, self.app.service.admin.summary())
+            elif path == "/api/admin/sandbox/summary":
+                self._json(HTTPStatus.OK, self.app.service.sandbox.summary())
+            elif path == "/api/admin/sandbox/suites":
+                self._json(
+                    HTTPStatus.OK,
+                    {"items": self.app.service.sandbox.list_suites()},
+                )
+            elif path.startswith("/api/admin/sandbox/reports/"):
+                run_id = unquote(path.removeprefix("/api/admin/sandbox/reports/"))
+                self._json(HTTPStatus.OK, self.app.service.sandbox.report(run_id))
+            elif path.startswith("/api/admin/sandbox/runs/"):
+                parts = [unquote(item) for item in path.strip("/").split("/")]
+                query = parse_qs(parsed_url.query)
+                if len(parts) == 6 and parts[:4] == ["api", "admin", "sandbox", "runs"] and parts[5] == "cases":
+                    self._json(
+                        HTTPStatus.OK,
+                        {
+                            "items": self.app.service.sandbox.list_cases(
+                                parts[4],
+                                query.get("case_type", [""])[0],
+                                query.get("status", [""])[0],
+                                int(query.get("limit", ["200"])[0]),
+                            )
+                        },
+                    )
+                elif len(parts) == 7 and parts[:4] == ["api", "admin", "sandbox", "runs"] and parts[5] == "cases":
+                    self._json(
+                        HTTPStatus.OK,
+                        self.app.service.sandbox.get_case(parts[4], parts[6]),
+                    )
+                elif len(parts) == 5 and parts[:4] == ["api", "admin", "sandbox", "runs"]:
+                    self._json(HTTPStatus.OK, self.app.service.sandbox.get_run(parts[4]))
+                else:
+                    raise APIError(HTTPStatus.NOT_FOUND, "沙盒运行路径无效")
             elif path == "/api/admin/records":
                 query = parse_qs(parsed_url.query)
                 record_type = query.get("type", ["incidents"])[0]
@@ -102,6 +136,110 @@ class RequestHandler(BaseHTTPRequestHandler):
                     HTTPStatus.OK,
                     {"items": self.app.service.admin.list_activity(limit)},
                 )
+            elif path == "/api/admin/governance/summary":
+                self._json(HTTPStatus.OK, self.app.service.governance.summary())
+            elif path == "/api/admin/assets":
+                query = parse_qs(parsed_url.query)
+                filters = {
+                    "asset_type": query.get("asset_type", [""])[0],
+                    "domain": query.get("domain", [""])[0],
+                    "status": query.get("status", [""])[0],
+                    "owner": query.get("owner", [""])[0],
+                    "risk": query.get("risk", [""])[0],
+                    "review": query.get("review", [""])[0],
+                    "q": query.get("q", [""])[0],
+                    "page": query.get("page", ["1"])[0],
+                    "page_size": query.get("page_size", ["50"])[0],
+                }
+                self._json(HTTPStatus.OK, self.app.service.governance.list_assets(filters))
+            elif path.startswith("/api/admin/assets/"):
+                parts = [unquote(item) for item in path.strip("/").split("/")]
+                if len(parts) != 5:
+                    raise APIError(HTTPStatus.NOT_FOUND, "AI资产路径无效")
+                self._json(
+                    HTTPStatus.OK,
+                    self.app.service.governance.get_asset(parts[3], parts[4]),
+                )
+            elif path == "/api/admin/governance/issues":
+                query = parse_qs(parsed_url.query)
+                self._json(
+                    HTTPStatus.OK,
+                    self.app.service.governance.list_issues(
+                        {
+                            "status": query.get("status", [""])[0],
+                            "issue_type": query.get("issue_type", [""])[0],
+                            "severity": query.get("severity", [""])[0],
+                            "asset_type": query.get("asset_type", [""])[0],
+                        }
+                    ),
+                )
+            elif path == "/api/admin/governance/audit":
+                query = parse_qs(parsed_url.query)
+                self._json(
+                    HTTPStatus.OK,
+                    {
+                        "items": self.app.service.governance.list_audit(
+                            int(query.get("limit", ["100"])[0])
+                        )
+                    },
+                )
+            elif path == "/api/admin/import-batches":
+                query = parse_qs(parsed_url.query)
+                self._json(
+                    HTTPStatus.OK,
+                    {
+                        "items": self.app.service.governance.list_import_batches(
+                            int(query.get("limit", ["50"])[0])
+                        )
+                    },
+                )
+            elif path.startswith("/api/admin/import-batches/"):
+                batch_id = unquote(path.removeprefix("/api/admin/import-batches/"))
+                self._json(
+                    HTTPStatus.OK,
+                    self.app.service.governance.get_import_batch(batch_id),
+                )
+            elif path == "/api/admin/asset-relations":
+                query = parse_qs(parsed_url.query)
+                self._json(
+                    HTTPStatus.OK,
+                    {
+                        "items": self.app.service.governance.list_relations(
+                            int(query.get("limit", ["100"])[0])
+                        )
+                    },
+                )
+            elif path == "/api/admin/asset-feedback":
+                query = parse_qs(parsed_url.query)
+                self._json(
+                    HTTPStatus.OK,
+                    {
+                        "items": self.app.service.governance.list_feedback(
+                            int(query.get("limit", ["100"])[0])
+                        )
+                    },
+                )
+            elif path == "/api/admin/lineage":
+                query = parse_qs(parsed_url.query)
+                self._json(
+                    HTTPStatus.OK,
+                    self.app.service.governance.lineage(
+                        query.get("asset_type", [""])[0],
+                        query.get("asset_key", [""])[0],
+                        query.get("version", [""])[0],
+                    ),
+                )
+            elif path == "/api/admin/test-cases":
+                self._json(
+                    HTTPStatus.OK,
+                    {"items": self.app.service.governance.list_test_cases()},
+                )
+            elif path.startswith("/api/admin/test-cases/"):
+                case_key = unquote(path.removeprefix("/api/admin/test-cases/"))
+                item = self.app.service.governance.get_test_case(case_key)
+                if item is None:
+                    raise APIError(HTTPStatus.NOT_FOUND, "测试用例不存在")
+                self._json(HTTPStatus.OK, item)
             elif path == "/api/admin/knowledge":
                 self._json(
                     HTTPStatus.OK,
@@ -387,8 +525,31 @@ class RequestHandler(BaseHTTPRequestHandler):
                 self._static(path)
         except APIError as exc:
             self._json(exc.status, {"error": exc.message})
+        except (ValueError, TypeError, json.JSONDecodeError) as exc:
+            self._json(HTTPStatus.BAD_REQUEST, {"error": str(exc)})
         except Exception as exc:  # noqa: BLE001
             LOG.exception("GET failed")
+            self._json(HTTPStatus.INTERNAL_SERVER_ERROR, {"error": f"服务器处理失败：{exc}"})
+
+    def do_PATCH(self) -> None:  # noqa: N802
+        try:
+            path = urlparse(self.path).path
+            payload = self._read_json()
+            self._require_admin()
+            parts = [unquote(item) for item in path.strip("/").split("/")]
+            if len(parts) == 5 and parts[:3] == ["api", "admin", "assets"]:
+                result = self.app.service.governance.update_metadata(
+                    parts[3], parts[4], payload, self._actor()
+                )
+                self._json(HTTPStatus.OK, result)
+            else:
+                raise APIError(HTTPStatus.NOT_FOUND, "接口不存在")
+        except APIError as exc:
+            self._json(exc.status, {"error": exc.message})
+        except (ValueError, TypeError, json.JSONDecodeError) as exc:
+            self._json(HTTPStatus.BAD_REQUEST, {"error": str(exc)})
+        except Exception as exc:  # noqa: BLE001
+            LOG.exception("PATCH failed")
             self._json(HTTPStatus.INTERNAL_SERVER_ERROR, {"error": f"服务器处理失败：{exc}"})
 
     def do_POST(self) -> None:  # noqa: N802
@@ -398,7 +559,74 @@ class RequestHandler(BaseHTTPRequestHandler):
             if path.startswith("/api/admin/"):
                 self._require_admin()
             parts = [unquote(item) for item in path.strip("/").split("/")]
-            if path == "/api/admin/annotations":
+            if path == "/api/asset-feedback":
+                result = self.app.service.governance.add_feedback(payload, self._actor())
+                self._json(HTTPStatus.CREATED, result)
+            elif path == "/api/knowledge-candidates":
+                result = self.app.service.governance.create_import_batch(
+                    {
+                        "format": "json",
+                        "source_type": "incident_candidate",
+                        "source_label": str(payload.get("source_label") or "现场或接口人提交"),
+                        "items": [payload.get("candidate")],
+                    },
+                    self._actor(),
+                )
+                self._json(HTTPStatus.CREATED, result)
+            elif path == "/api/admin/import-batches":
+                self._json(
+                    HTTPStatus.CREATED,
+                    self.app.service.governance.create_import_batch(payload, self._actor()),
+                )
+            elif path == "/api/admin/sandbox/runs":
+                self._json(
+                    HTTPStatus.CREATED,
+                    self.app.service.sandbox.create_run(payload, self._actor()),
+                )
+            elif len(parts) == 6 and parts[:4] == ["api", "admin", "sandbox", "runs"] and parts[5] == "reveal":
+                self._require_super_admin()
+                if not bool(payload.get("confirmed")):
+                    raise ValueError("揭晓会使题包退出发布盲测，请明确确认")
+                self._json(
+                    HTTPStatus.OK,
+                    self.app.service.sandbox.reveal(parts[4], self._actor(), self._role()),
+                )
+            elif len(parts) == 6 and parts[:4] == ["api", "admin", "sandbox", "runs"] and parts[5] == "reset":
+                self._json(
+                    HTTPStatus.CREATED,
+                    self.app.service.sandbox.reset(parts[4], self._actor()),
+                )
+            elif len(parts) == 5 and parts[:3] == ["api", "admin", "import-batches"] and parts[4] == "confirm":
+                self._json(
+                    HTTPStatus.OK,
+                    self.app.service.governance.confirm_import_batch(parts[3], self._actor()),
+                )
+            elif len(parts) == 5 and parts[:3] == ["api", "admin", "import-batches"] and parts[4] == "cancel":
+                self._json(
+                    HTTPStatus.OK,
+                    self.app.service.governance.cancel_import_batch(parts[3], self._actor()),
+                )
+            elif path == "/api/admin/asset-relations":
+                self._json(
+                    HTTPStatus.CREATED,
+                    self.app.service.governance.create_relation(payload, self._actor()),
+                )
+            elif path == "/api/admin/asset-feedback":
+                self._json(
+                    HTTPStatus.CREATED,
+                    self.app.service.governance.add_feedback(payload, self._actor()),
+                )
+            elif path == "/api/admin/test-cases":
+                self._json(
+                    HTTPStatus.CREATED,
+                    self.app.service.governance.create_test_case(payload, self._actor()),
+                )
+            elif len(parts) == 6 and parts[:4] == ["api", "admin", "governance", "issues"] and parts[5] == "resolve":
+                self._json(
+                    HTTPStatus.OK,
+                    self.app.service.governance.resolve_issue(parts[4], payload, self._actor()),
+                )
+            elif path == "/api/admin/annotations":
                 result = self.app.service.admin.add_annotation(payload, self._actor())
                 self._json(HTTPStatus.CREATED, result)
             elif path == "/api/admin/raw-access":
@@ -433,6 +661,7 @@ class RequestHandler(BaseHTTPRequestHandler):
                 result = self.app.service.assets.create_knowledge_version(
                     parts[3], payload, self._actor()
                 )
+                self.app.service.governance.ensure_asset_metadata("knowledge", parts[3])
                 self._json(HTTPStatus.CREATED, result)
             elif len(parts) == 5 and parts[:3] == ["api", "admin", "constraints"] and parts[4] == "versions":
                 result = self.app.service.constraints.create_version(

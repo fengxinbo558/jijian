@@ -122,6 +122,24 @@ class RetrievalTestService:
                     now,
                 ),
             )
+            connection.execute(
+                """
+                INSERT INTO ai_runtime_snapshots (
+                    id, run_type, run_id, knowledge_version,
+                    prompt_versions_json, constraint_versions_json,
+                    model_json, capabilities_json, created_at
+                ) VALUES (?, 'retrieval_test', ?, ?, '{}', ?, ?, ?, ?)
+                """,
+                (
+                    "SNAP-" + uuid.uuid4().hex[:12].upper(),
+                    run_id,
+                    index["knowledge_version"],
+                    _dump({"investigation-policy": index["constraint_version"]}),
+                    _dump({"provider": "not_used", "mode": "retrieval_only"}),
+                    _dump(result["capabilities"]),
+                    now,
+                ),
+            )
         return result
 
     def list(self, limit: int = 100) -> list:

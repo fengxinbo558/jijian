@@ -128,6 +128,22 @@ class AdminService:
                         "created_at": row["updated_at"],
                     }
                 )
+            for row in connection.execute(
+                "SELECT * FROM ai_governance_audit ORDER BY created_at DESC LIMIT ?",
+                (safe_limit,),
+            ).fetchall():
+                items.append(
+                    {
+                        "id": f"GOV-{row['id']}",
+                        "activity_type": "asset_governance",
+                        "action": row["action"],
+                        "actor": row["actor"],
+                        "asset": f"{row['asset_type']}:{row['asset_key']}",
+                        "status": "recorded",
+                        "details": _load(row["details_json"], {}),
+                        "created_at": row["created_at"],
+                    }
+                )
             version_queries = (
                 ("prompt_draft", "prompt_key", "prompt_versions"),
                 ("knowledge_draft", "card_id", "knowledge_versions"),

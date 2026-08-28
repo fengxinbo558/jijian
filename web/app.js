@@ -64,6 +64,23 @@ const state = {
     selectedRagRun: null,
     selectedProvider: null,
     pendingPublishId: null,
+    assetGovernance: {
+      tab: "overview",
+      summary: null,
+      catalog: null,
+      issues: [],
+      imports: [],
+      selectedAsset: null,
+      lineage: null,
+      page: 1,
+    },
+    sandbox: {
+      summary: null,
+      selectedRunId: null,
+      selectedCaseId: null,
+      cases: [],
+      revealedAnswers: null,
+    },
   },
 };
 
@@ -105,6 +122,8 @@ const sourceDialog = document.querySelector("#sourceDialog");
 const facilityDialog = document.querySelector("#facilityDialog");
 const adminView = document.querySelector("#adminView");
 const publishConfirmDialog = document.querySelector("#publishConfirmDialog");
+const assetGovernanceDetailDialog = document.querySelector("#assetGovernanceDetailDialog");
+const sandboxCaseDialog = document.querySelector("#sandboxCaseDialog");
 const operationDialog = document.querySelector("#operationDialog");
 const cameraDialog = document.querySelector("#cameraDialog");
 const labDialog = document.querySelector("#labDialog");
@@ -1086,13 +1105,17 @@ function setRole(role, preserveActor = false) {
   const adminButton = document.querySelector("#adminRailButton");
   const labButton = document.querySelector("#labRailButton");
   const drillButton = document.querySelector("#drillRailButton");
+  const adminSection = document.querySelector(".rail-admin-section");
   const isAdmin = ["ai_admin", "super_admin"].includes(state.role);
+  adminButton.hidden = !isAdmin;
   adminButton.classList.toggle("is-locked", !isAdmin);
   adminButton.setAttribute("aria-description", isAdmin ? "打开 AI 控制台" : "仅 AI 运营管理员或最高审计管理员可以打开");
+  labButton.hidden = !isAdmin;
   labButton.classList.toggle("is-locked", !isAdmin);
   labButton.setAttribute("aria-description", isAdmin ? "打开接入实验室" : "仅 AI 运营管理员与最高审计管理员可以打开");
   drillButton.hidden = !isAdmin;
   drillButton.setAttribute("aria-description", "打开管理员故障演练台");
+  adminSection.hidden = !isAdmin;
   document.querySelector("#breakGlassPanel").hidden = state.role !== "super_admin";
   applyGovernancePermissions();
   renderRoleBrief();
@@ -1101,6 +1124,437 @@ function setRole(role, preserveActor = false) {
   if (state.incidents.length && state.view !== "admin") loadIncidents(state.view === "detail" ? state.selectedId : null, false).catch((error) => showToast(error.message, true));
   if (governanceDialog.open) loadGovernance().catch((error) => showToast(error.message, true));
   if (!isAdmin && drillDialog.open) closeDialog(drillDialog);
+}
+
+const assetTypeNames = {
+  knowledge: "知识",
+  prompt: "提示词",
+  constraint: "约束",
+  test_case: "测试用例",
+};
+
+const assetHealthNames = {
+  healthy: "健康",
+  missing_metadata: "信息待补",
+  needs_attention: "需要处理",
+  blocked: "阻断上线",
+  review_due: "到期复审",
+};
+
+const governanceIssueNames = {
+  exact_duplicate: "完全重复",
+  near_duplicate: "疑似重复",
+  unsafe_conflict: "安全冲突",
+  semantic_conflict: "语义冲突",
+};
+
+const importStatusNames = {
+  ready: "可建立草稿",
+  exact_duplicate: "完全重复",
+  near_duplicate: "疑似重复",
+  conflict: "存在冲突",
+  invalid: "格式错误",
+  linked_existing: "已关联现有资产",
+  created_draft: "已建立草稿",
+  scanned: "等待确认",
+  completed: "导入完成",
+  cancelled: "已撤销",
+};
+
+function assetStatusText(item = {}) {
+  return assetHealthNames[item.health] || item.lifecycle_status || item.catalog_status || "待确认";
+}
+
+function governanceSetStatus(message = "", busy = false) {
+  const target = document.querySelector("#assetGovernanceStatus");
+  target.textContent = message;
+  target.closest(".asset-governance-panel")?.setAttribute("aria-busy", busy ? "true" : "false");
+}
+
+function activateAssetGovernanceTab(name, load = true) {
+  const allowed = ["overview", "catalog", "issues", "imports", "lineage"];
+  const selected = allowed.includes(name) ? name : "overview";
+  state.admin.assetGovernance.tab = selected;
+  document.querySelectorAll("[data-asset-governance-tab]").forEach((button) => {
+    const active = button.dataset.assetGovernanceTab === selected;
+    button.classList.toggle("is-active", active);
+    button.setAttribute("aria-current", active ? "page" : "false");
+  });
+  document.querySelectorAll("[data-asset-governance-panel]").forEach((panel) => {
+    panel.classList.toggle("is-active", panel.dataset.assetGovernancePanel === selected);
+  });
+  if (!load) return;
+  if (selected === "catalog") loadAssetCatalog().catch((error) => showToast(error.message, true));
+  if (selected === "issues") loadGovernanceIssues().catch((error) => showToast(error.message, true));
+  if (selected === "imports") loadImportBatches().catch((error) => showToast(error.message, true));
+}
+
+function governanceMetric(label, value, note, tone = "neutral", target = "") {
+  const attributes = target ? ` data-asset-governance-tab="${escapeHtml(target)}" type="button"` : "";
+  const tag = target ? "button" : "article";
+  return `<${tag} class="governance-metric" data-tone="${escapeHtml(tone)}"${attributes}>
+    <small>${escapeHtml(label)}</small><strong>${escapeHtml(value)}</strong><span>${escapeHtml(note)}</span>
+  </${tag}>`;
+}
+
+function renderAssetGovernanceOverview(summary = {}) {
+  const counts = summary.asset_counts || {};
+  const health = summary.health_counts || {};
+  const issues = summary.issue_counts || {};
+  const issueTotal = Object.values(issues).reduce((total, value) => total + Number(value || 0), 0);
+  const blocked = Number(health.blocked || 0);
+  const attention = Number(health.needs_attention || 0) + Number(health.review_due || 0) + Number(health.missing_metadata || 0);
+  const target = document.querySelector("#assetGovernanceOverview");
+  target.innerHTML = `
+    <div class="governance-metric-strip">
+      ${governanceMetric("全部 AI 资产", summary.total_assets || 0, "知识、提示词、约束、测试用例", "neutral", "catalog")}
+      ${governanceMetric("阻断上线", blocked, "安全冲突未处理前不能发布", blocked ? "danger" : "safe", "issues")}
+      ${governanceMetric("待治理", issueTotal + attention, "重复、冲突、到期或信息待补", issueTotal + attention ? "warning" : "safe", "issues")}
+      ${governanceMetric("来源版本", summary.source_versions || 0, "保留原来源和内容指纹", "neutral", "lineage")}
+      ${governanceMetric("导入批次", summary.import_batches || 0, "先扫描再确认，不直接上线", "neutral", "imports")}
+    </div>
+    <div class="governance-command-grid">
+      <section class="governance-command-card asset-inventory-card">
+        <header><div><p class="eyebrow">INVENTORY</p><h4>现有资产构成</h4></div><button class="text-button" data-asset-governance-tab="catalog" type="button">打开目录</button></header>
+        <div class="asset-count-bars">
+          ${Object.entries(assetTypeNames).map(([key, label]) => `<div><span>${escapeHtml(label)}</span><strong>${escapeHtml(counts[key] || 0)}</strong><i style="--asset-share:${Math.max(4, Math.min(100, Number(counts[key] || 0) / Math.max(1, Number(summary.total_assets || 1)) * 100))}%"></i></div>`).join("")}
+        </div>
+      </section>
+      <section class="governance-command-card governance-priority-card">
+        <header><div><p class="eyebrow">NEXT ACTION</p><h4>现在最值得先处理什么</h4></div></header>
+        <ol>
+          <li data-priority="critical"><strong>先处理阻断项</strong><span>${blocked ? `${blocked} 项安全冲突正在阻断测试或上线` : "当前没有未处理的上线阻断"}</span></li>
+          <li data-priority="review"><strong>再清理重复与过期知识</strong><span>${issueTotal + attention} 项需要人工判断，不会自动删除</span></li>
+          <li data-priority="trace"><strong>最后查看使用反馈</strong><span>不能只看知识是否存在，还要看它是否帮助解决故障</span></li>
+        </ol>
+      </section>
+    </div>
+    <section class="provenance-rail-card">
+      <header><p class="eyebrow">TRUST PATH</p><h4>每条资产都沿这条可追查路径进入 AI</h4></header>
+      <div class="provenance-rail" aria-label="资产可信链路">
+        <div><b>01</b><span>来源原文</span><small>谁提供、哪一版</small></div><i aria-hidden="true">→</i>
+        <div><b>02</b><span>内容指纹</span><small>发现完全重复</small></div><i aria-hidden="true">→</i>
+        <div><b>03</b><span>人工治理</span><small>合并、保留或补条件</small></div><i aria-hidden="true">→</i>
+        <div><b>04</b><span>测试与上线</span><small>阻断项不能绕过</small></div><i aria-hidden="true">→</i>
+        <div><b>05</b><span>实际使用</span><small>命中、采纳、解决结果</small></div>
+      </div>
+    </section>`;
+}
+
+async function loadAssetGovernance() {
+  governanceSetStatus("正在核对资产、重复问题和来源版本…", true);
+  try {
+    const [summary, catalog, issues, imports] = await Promise.all([
+      api("/api/admin/governance/summary"),
+      api("/api/admin/assets?page=1&page_size=50"),
+      api("/api/admin/governance/issues?status=open"),
+      api("/api/admin/import-batches?limit=20"),
+    ]);
+    Object.assign(state.admin.assetGovernance, {
+      summary,
+      catalog,
+      issues: issues.items || [],
+      imports: imports.items || [],
+      page: 1,
+    });
+    renderAssetGovernanceOverview(summary);
+    renderAssetCatalog(catalog);
+    renderGovernanceIssues(issues.items || []);
+    renderImportBatches(imports.items || []);
+    governanceSetStatus(`治理结果已更新：${summary.total_assets || 0} 项资产，${issues.total || 0} 项待处理问题。`, false);
+  } catch (error) {
+    governanceSetStatus(`治理数据读取失败：${error.message}`, false);
+    throw error;
+  }
+}
+
+function catalogQuery() {
+  const form = document.querySelector("#assetCatalogFilterForm");
+  const data = new FormData(form);
+  const query = new URLSearchParams();
+  for (const [key, value] of data.entries()) if (String(value).trim()) query.set(key, String(value).trim());
+  query.set("page", String(state.admin.assetGovernance.page || 1));
+  query.set("page_size", "30");
+  return query.toString();
+}
+
+function renderAssetCatalog(payload = { items: [] }) {
+  const items = payload.items || [];
+  document.querySelector("#assetCatalogCount").textContent = `${payload.total || 0} 项`;
+  const target = document.querySelector("#assetCatalogTable");
+  if (!items.length) {
+    target.innerHTML = `<div class="admin-empty">当前筛选范围没有资产。可以清除筛选后再看。</div>`;
+  } else {
+    target.innerHTML = `<table class="asset-catalog-table">
+      <thead><tr><th>资产</th><th>领域 / 负责人</th><th>版本状态</th><th>治理状态</th><th><span class="sr-only">操作</span></th></tr></thead>
+      <tbody>${items.map((item) => `<tr>
+        <td><small>${escapeHtml(assetTypeNames[item.asset_type] || item.asset_type)} · ${escapeHtml(item.asset_key)}</small><strong>${escapeHtml(item.title)}</strong><span>${escapeHtml((item.tags || []).join(" · ") || item.fault_family || "未添加标签")}</span></td>
+        <td><strong>${escapeHtml(item.domain || "待补充")}</strong><span>${escapeHtml(item.owner || "待补充")}</span></td>
+        <td><strong>${escapeHtml(item.lifecycle_status || "未知")}</strong><span>${escapeHtml(item.published_version || "尚未发布")}${item.draft_count ? ` · ${escapeHtml(item.draft_count)} 个草稿` : ""}</span></td>
+        <td><span class="governance-status-chip" data-health="${escapeHtml(item.health)}">${escapeHtml(assetStatusText(item))}</span>${Object.values(item.issue_counts || {}).reduce((sum, value) => sum + Number(value || 0), 0) ? `<small>${escapeHtml(Object.values(item.issue_counts).reduce((sum, value) => sum + Number(value || 0), 0))} 项问题</small>` : ""}</td>
+        <td><button class="row-arrow-button" data-action="open-governance-asset" data-asset-type="${escapeHtml(item.asset_type)}" data-asset-key="${escapeHtml(item.asset_key)}" type="button" aria-label="查看 ${escapeHtml(item.title)} 的治理详情">查看</button></td>
+      </tr>`).join("")}</tbody>
+    </table>`;
+  }
+  const page = Number(payload.page || 1);
+  const pages = Number(payload.pages || 1);
+  document.querySelector("#assetCatalogPagination").innerHTML = `
+    <button class="text-button" data-action="asset-catalog-page" data-page="${Math.max(1, page - 1)}" type="button" ${page <= 1 ? "disabled" : ""}>上一页</button>
+    <span>第 ${escapeHtml(page)} / ${escapeHtml(pages)} 页</span>
+    <button class="text-button" data-action="asset-catalog-page" data-page="${Math.min(pages, page + 1)}" type="button" ${page >= pages ? "disabled" : ""}>下一页</button>`;
+}
+
+async function loadAssetCatalog() {
+  governanceSetStatus("正在读取统一资产目录…", true);
+  try {
+    const payload = await api(`/api/admin/assets?${catalogQuery()}`);
+    state.admin.assetGovernance.catalog = payload;
+    renderAssetCatalog(payload);
+    governanceSetStatus(`目录已更新，共 ${payload.total || 0} 项资产。`, false);
+  } catch (error) {
+    governanceSetStatus(`目录读取失败：${error.message}`, false);
+    throw error;
+  }
+}
+
+function renderGovernanceIssues(items = []) {
+  const target = document.querySelector("#assetGovernanceIssueList");
+  if (!items.length) {
+    target.innerHTML = `<div class="governance-clear-state"><span>✓</span><div><strong>这个范围没有待处理问题</strong><p>旧经验不会因为本次结果不同就被删除；系统只记录适用条件和关系。</p></div></div>`;
+    return;
+  }
+  target.innerHTML = items.map((item) => `<article class="governance-issue" data-severity="${escapeHtml(item.severity)}">
+    <header><div><small>${escapeHtml(governanceIssueNames[item.issue_type] || item.issue_type)} · ${escapeHtml(item.id)}</small><h4>${escapeHtml(item.primary_type)}:${escapeHtml(item.primary_key)}${item.primary_version ? `@${escapeHtml(item.primary_version)}` : ""}</h4></div><span>${item.severity === "blocking" ? "阻断上线" : "需要判断"}</span></header>
+    ${item.related_key ? `<p class="issue-relation">对比对象：${escapeHtml(item.related_type)}:${escapeHtml(item.related_key)}${item.related_version ? `@${escapeHtml(item.related_version)}` : ""}</p>` : ""}
+    <p>${escapeHtml(item.evidence?.reason || item.evidence?.reasons?.join("；") || "系统检测到内容可能重复或与安全约束冲突，需要人工核对。")}</p>
+    ${item.status !== "resolved" ? `<form class="governance-resolution-form" data-issue-id="${escapeHtml(item.id)}">
+      <label>处理方式<select name="action"><option value="keep_separate">保留两条，适用条件不同</option><option value="supplement_conditions">补充适用与停止条件</option><option value="relate">建立关联</option><option value="merge">合并为一条</option><option value="ignore">确认忽略</option></select></label>
+      <label>依据<input name="note" required placeholder="写明为何这样处理，便于以后追查"></label>
+      <button class="secondary-button" type="submit">确认处理</button>
+    </form>` : `<div class="issue-resolution-note">已处理：${escapeHtml(item.resolution?.action || "已完成")} · ${escapeHtml(item.resolution?.note || "未填写补充说明")}</div>`}
+  </article>`).join("");
+}
+
+async function loadGovernanceIssues() {
+  const status = document.querySelector("#assetIssueStatus").value;
+  governanceSetStatus("正在读取重复与冲突队列…", true);
+  try {
+    const payload = await api(`/api/admin/governance/issues?status=${encodeURIComponent(status)}`);
+    state.admin.assetGovernance.issues = payload.items || [];
+    renderGovernanceIssues(payload.items || []);
+    governanceSetStatus(`问题队列已更新，共 ${payload.total || 0} 项。`, false);
+  } catch (error) {
+    governanceSetStatus(`问题队列读取失败：${error.message}`, false);
+    throw error;
+  }
+}
+
+async function resolveGovernanceIssue(form) {
+  const button = form.querySelector('button[type="submit"]');
+  button.disabled = true;
+  const data = new FormData(form);
+  try {
+    await api(`/api/admin/governance/issues/${encodeURIComponent(form.dataset.issueId)}/resolve`, {
+      method: "POST",
+      body: JSON.stringify({ action: data.get("action"), note: data.get("note") }),
+    });
+    showToast("处理结论已保存，旧记录和依据仍保留");
+    await Promise.all([loadGovernanceIssues(), loadAssetGovernanceSummaryOnly()]);
+  } finally {
+    button.disabled = false;
+  }
+}
+
+async function loadAssetGovernanceSummaryOnly() {
+  const summary = await api("/api/admin/governance/summary");
+  state.admin.assetGovernance.summary = summary;
+  renderAssetGovernanceOverview(summary);
+}
+
+function importSummaryChips(summary = {}) {
+  return Object.entries(importStatusNames)
+    .filter(([key]) => Number(summary[key] || 0) > 0)
+    .map(([key, label]) => `<span data-import-status="${escapeHtml(key)}">${escapeHtml(label)} ${escapeHtml(summary[key])}</span>`).join("");
+}
+
+function renderImportBatches(items = []) {
+  const target = document.querySelector("#assetImportResults");
+  if (!items.length) {
+    target.innerHTML = `<div class="admin-empty">还没有导入批次。左侧粘贴知识后先扫描，不会直接写入线上知识。</div>`;
+    return;
+  }
+  target.innerHTML = items.map((batch) => {
+    const blocked = (batch.items || []).some((item) => ["near_duplicate", "conflict", "invalid"].includes(item.status));
+    return `<details class="import-batch" ${items.length === 1 ? "open" : ""}>
+      <summary><div><small>${escapeHtml(batch.id)} · ${escapeHtml(formatTime(batch.created_at))}</small><strong>${escapeHtml(batch.source_label)}</strong></div><span data-batch-status="${escapeHtml(batch.status)}">${escapeHtml(importStatusNames[batch.status] || batch.status)}</span></summary>
+      <div class="import-summary-chips">${importSummaryChips(batch.summary || {}) || "<span>没有统计结果</span>"}</div>
+      <div class="import-item-list">${(batch.items || []).map((item) => `<article data-import-status="${escapeHtml(item.status)}"><b>${escapeHtml(item.item_index)}</b><div><strong>${escapeHtml(item.candidate?.title || item.candidate?.id || "未识别条目")}</strong><small>${escapeHtml(importStatusNames[item.status] || item.status)}${item.matched_asset_key ? ` · 已匹配 ${escapeHtml(item.matched_asset_key)}@${escapeHtml(item.matched_version)}` : ""}${item.error_message ? ` · ${escapeHtml(item.error_message)}` : ""}</small></div></article>`).join("")}</div>
+      ${batch.status === "scanned" ? `<div class="import-actions"><button class="text-button" data-action="cancel-import-batch" data-batch-id="${escapeHtml(batch.id)}" type="button">撤销批次</button><button class="primary-button" data-action="confirm-import-batch" data-batch-id="${escapeHtml(batch.id)}" type="button" ${blocked ? "disabled" : ""}>${blocked ? "先处理异常项" : "确认导入处理"}</button></div>` : ""}
+    </details>`;
+  }).join("");
+}
+
+async function loadImportBatches() {
+  governanceSetStatus("正在读取导入批次…", true);
+  try {
+    const payload = await api("/api/admin/import-batches?limit=20");
+    state.admin.assetGovernance.imports = payload.items || [];
+    renderImportBatches(payload.items || []);
+    governanceSetStatus(`已读取 ${payload.items?.length || 0} 个最近导入批次。`, false);
+  } catch (error) {
+    governanceSetStatus(`导入批次读取失败：${error.message}`, false);
+    throw error;
+  }
+}
+
+async function submitAssetImport(form) {
+  const button = form.querySelector('button[type="submit"]');
+  const original = button.textContent;
+  button.disabled = true;
+  button.textContent = "正在扫描重复与冲突…";
+  const data = new FormData(form);
+  try {
+    const batch = await api("/api/admin/import-batches", {
+      method: "POST",
+      body: JSON.stringify(Object.fromEntries(data.entries())),
+    });
+    showToast(`扫描完成：批次 ${batch.id}，尚未上线`);
+    await Promise.all([loadImportBatches(), loadAssetGovernanceSummaryOnly()]);
+  } finally {
+    button.disabled = false;
+    button.textContent = original;
+  }
+}
+
+async function updateImportBatch(batchId, action) {
+  const result = await api(`/api/admin/import-batches/${encodeURIComponent(batchId)}/${action}`, { method: "POST", body: "{}" });
+  const created = Number(result.summary?.created_drafts || 0);
+  const linked = Number(result.summary?.linked_existing || 0);
+  showToast(action === "confirm" ? `批次 ${result.id} 已处理：新建 ${created} 个草稿，关联 ${linked} 条现有资产` : `批次 ${result.id} 已撤销`);
+  await Promise.all([loadImportBatches(), loadAssetCatalog(), loadAssetGovernanceSummaryOnly()]);
+}
+
+function detailList(items = [], empty = "暂无") {
+  return items.length ? `<ul>${items.map((item) => `<li>${escapeHtml(typeof item === "string" ? item : jsonText(item))}</li>`).join("")}</ul>` : `<p class="empty-inline">${escapeHtml(empty)}</p>`;
+}
+
+function renderAssetGovernanceDetail(detail = {}) {
+  const metadata = detail.metadata || {};
+  const versions = detail.versions || [];
+  const latest = versions[0] || {};
+  const effect = detail.effect || {};
+  document.querySelector("#assetGovernanceDetailTitle").textContent = metadata.title || metadata.asset_key || "资产详情";
+  document.querySelector("#assetGovernanceDetail").innerHTML = `
+    <section class="asset-detail-identity">
+      <div><small>${escapeHtml(assetTypeNames[metadata.asset_type] || metadata.asset_type)} · ${escapeHtml(metadata.asset_key)}</small><h3>${escapeHtml(metadata.title)}</h3><p>${escapeHtml(metadata.domain || "领域待补充")} · ${escapeHtml(metadata.fault_family || "故障族待补充")}</p></div>
+      <span class="governance-status-chip" data-health="${detail.issues?.some((item) => item.severity === "blocking" && item.status !== "resolved") ? "blocked" : "healthy"}">${detail.issues?.some((item) => item.severity === "blocking" && item.status !== "resolved") ? "阻断上线" : "可继续治理"}</span>
+    </section>
+    <section class="asset-provenance-block">
+      <header><p class="eyebrow">SOURCE → VERSION → USE</p><h4>这条资产怎样进入并影响 AI</h4></header>
+      <div class="asset-provenance-steps">
+        <div><b>01</b><strong>来源</strong><span>${escapeHtml((latest.source_refs || []).join("、") || "来源待补充")}</span></div>
+        <i aria-hidden="true">→</i>
+        <div><b>02</b><strong>版本与指纹</strong><span>${escapeHtml(latest.version || "无版本")} · ${escapeHtml((latest.content_fingerprint || "无指纹").slice(0, 12))}</span></div>
+        <i aria-hidden="true">→</i>
+        <div><b>03</b><strong>使用结果</strong><span>${escapeHtml(effect.rag_hits || 0)} 次命中 · ${escapeHtml(effect.sample_size || 0)} 条人工反馈</span></div>
+      </div>
+    </section>
+    <section class="asset-impact-grid">
+      <article><small>参与调查</small><strong>${escapeHtml(effect.incidents || 0)}</strong><span>个故障事件</span></article>
+      <article><small>帮助解决</small><strong>${escapeHtml(effect.helped_resolve || 0)}</strong><span>人工反馈</span></article>
+      <article><small>未能解决</small><strong>${escapeHtml(effect.not_resolved || 0)}</strong><span>不会覆盖旧经验</span></article>
+      <article><small>待验证</small><strong>${escapeHtml(effect.unverified || 0)}</strong><span>样本不足时不下结论</span></article>
+    </section>
+    <details class="drawer-section" open><summary>负责人、标签与复审时间</summary>
+      <form class="asset-metadata-form" data-asset-type="${escapeHtml(metadata.asset_type)}" data-asset-key="${escapeHtml(metadata.asset_key)}">
+        <div class="editor-grid">
+          <label>负责人<input name="owner" value="${escapeHtml(metadata.owner || "")}" placeholder="明确到角色或账号"></label>
+          <label>领域<input name="domain" value="${escapeHtml(metadata.domain || "")}"></label>
+          <label>故障族<input name="fault_family" value="${escapeHtml(metadata.fault_family || "")}"></label>
+          <label>风险等级<select name="risk_level"><option value="unclassified" ${metadata.risk_level === "unclassified" ? "selected" : ""}>未分级</option><option value="controlled" ${metadata.risk_level === "controlled" ? "selected" : ""}>受控</option><option value="high" ${metadata.risk_level === "high" ? "selected" : ""}>高风险</option><option value="critical" ${metadata.risk_level === "critical" ? "selected" : ""}>关键</option></select></label>
+          <label>已复审日期<input name="reviewed_at" type="date" value="${escapeHtml((metadata.reviewed_at || "").slice(0, 10))}"></label>
+          <label>下次复审日期<input name="review_due_at" type="date" value="${escapeHtml((metadata.review_due_at || "").slice(0, 10))}"></label>
+        </div>
+        <label>标签（逗号分隔）<input name="tags" value="${escapeHtml((metadata.tags || []).join(", "))}" placeholder="存储, NVMe, I/O超时"></label>
+        <button class="secondary-button" type="submit">保存治理信息</button>
+      </form>
+    </details>
+    <details class="drawer-section" open><summary>版本与来源记录（${escapeHtml(versions.length)}）</summary>
+      <div class="drawer-version-list">${versions.length ? versions.map((item) => `<article><div><strong>${escapeHtml(item.version)}</strong><small>${escapeHtml(item.risk_level || "未分级")} · ${escapeHtml(formatTime(item.created_at))}</small></div><span>${escapeHtml((item.source_refs || []).join("、") || "来源待补充")}</span><code>${escapeHtml((item.content_fingerprint || "").slice(0, 16))}</code></article>`).join("") : `<div class="admin-empty">暂无版本元数据</div>`}</div>
+    </details>
+    <details class="drawer-section"><summary>重复、冲突与关系（${escapeHtml((detail.issues || []).length + (detail.relations || []).length)}）</summary>
+      <div class="drawer-finding-list">${(detail.issues || []).map((item) => `<article data-severity="${escapeHtml(item.severity)}"><strong>${escapeHtml(governanceIssueNames[item.issue_type] || item.issue_type)}</strong><span>${escapeHtml(item.status)} · ${escapeHtml(item.evidence?.reason || "等待人工判断")}</span></article>`).join("") || `<p class="empty-inline">没有发现治理问题</p>`}${(detail.relations || []).map((item) => `<article><strong>${escapeHtml(item.relation_type)}</strong><span>${escapeHtml(item.source_key)} → ${escapeHtml(item.target_key)}</span></article>`).join("")}</div>
+    </details>
+    <details class="drawer-section"><summary>当前结构化内容</summary><pre>${escapeHtml(jsonText(detail.content || {}))}</pre></details>
+    <div class="drawer-footer-actions"><button class="secondary-button" data-action="show-asset-lineage" data-asset-type="${escapeHtml(metadata.asset_type)}" data-asset-key="${escapeHtml(metadata.asset_key)}" type="button">查看完整来源与使用链</button></div>`;
+}
+
+async function openGovernanceAsset(button) {
+  governanceSetStatus("正在读取资产版本、来源和使用结果…", true);
+  try {
+    const detail = await api(`/api/admin/assets/${encodeURIComponent(button.dataset.assetType)}/${encodeURIComponent(button.dataset.assetKey)}`);
+    state.admin.assetGovernance.selectedAsset = detail;
+    renderAssetGovernanceDetail(detail);
+    openDialog(assetGovernanceDetailDialog);
+    governanceSetStatus(`已打开 ${detail.metadata?.asset_key || "资产"} 的治理详情。`, false);
+  } catch (error) {
+    governanceSetStatus(`资产详情读取失败：${error.message}`, false);
+    throw error;
+  }
+}
+
+async function saveAssetMetadata(form) {
+  const button = form.querySelector('button[type="submit"]');
+  button.disabled = true;
+  const values = Object.fromEntries(new FormData(form).entries());
+  values.tags = String(values.tags || "").split(/[,，]/).map((item) => item.trim()).filter(Boolean);
+  try {
+    await api(`/api/admin/assets/${encodeURIComponent(form.dataset.assetType)}/${encodeURIComponent(form.dataset.assetKey)}`, {
+      method: "PATCH",
+      body: JSON.stringify(values),
+    });
+    showToast("治理信息已保存，内容原文和历史版本没有被覆盖");
+    const detail = await api(`/api/admin/assets/${encodeURIComponent(form.dataset.assetType)}/${encodeURIComponent(form.dataset.assetKey)}`);
+    state.admin.assetGovernance.selectedAsset = detail;
+    renderAssetGovernanceDetail(detail);
+    await loadAssetCatalog();
+  } finally {
+    button.disabled = false;
+  }
+}
+
+function renderAssetLineage(data = {}) {
+  const target = document.querySelector("#assetLineageResult");
+  const asset = data.asset || {};
+  target.innerHTML = `<section class="lineage-map">
+    <header><small>${escapeHtml(assetTypeNames[asset.asset_type] || asset.asset_type)} · ${escapeHtml(asset.asset_key)}</small><h4>${escapeHtml(asset.version || "当前版本")}</h4></header>
+    <div class="lineage-columns">
+      <section><b>01</b><h5>来源版本</h5>${detailList((data.sources || []).map((item) => `${item.source_key}@${item.version}`), "来源待补充")}</section>
+      <i aria-hidden="true">→</i>
+      <section><b>02</b><h5>资产关系</h5>${detailList((data.relations || []).map((item) => `${item.source_key} ${item.relation_type} ${item.target_key}`), "暂无关联资产")}</section>
+      <i aria-hidden="true">→</i>
+      <section><b>03</b><h5>调查调用</h5>${detailList((data.runs || []).map((item) => `${item.incident_id || "测试"} · 排名 ${item.rank} · ${item.score}`), "尚未进入调查")}</section>
+      <i aria-hidden="true">→</i>
+      <section><b>04</b><h5>人工结果</h5>${detailList((data.feedback || []).map((item) => `${item.outcome} · ${item.incident_id || "无事件号"}`), "尚无人工反馈")}</section>
+    </div>
+    <p class="lineage-trust-note">${data.runtime_snapshot_available ? "运行时快照已保存，可以回看当时使用的知识与版本。" : "目前没有运行时调用记录，不能宣称这条资产已经产生实际效果。"}</p>
+  </section>`;
+}
+
+async function loadAssetLineage(form) {
+  const values = new FormData(form);
+  const query = new URLSearchParams();
+  for (const [key, value] of values.entries()) if (String(value).trim()) query.set(key, String(value).trim());
+  governanceSetStatus("正在追查来源、版本和使用结果…", true);
+  try {
+    const data = await api(`/api/admin/lineage?${query.toString()}`);
+    state.admin.assetGovernance.lineage = data;
+    renderAssetLineage(data);
+    governanceSetStatus(`已找到 ${data.asset?.asset_key || "资产"} 的完整链路。`, false);
+  } catch (error) {
+    governanceSetStatus(`链路查询失败：${error.message}`, false);
+    throw error;
+  }
 }
 
 function adminSummaryCard(label, value, note) {
@@ -1124,6 +1578,205 @@ async function loadAdminSummary() {
   renderAdminSummary(state.admin.summary);
 }
 
+const sandboxTypeNames = {
+  public_real_log: "公开真实日志",
+  single_fault: "单点故障",
+  cross_platform_cascade: "跨平台连锁",
+  missing_or_conflicting: "缺失与冲突",
+  normal_or_false_alarm: "正常与误报",
+  safety_responsibility: "安全责任",
+};
+
+const sandboxGateNames = {
+  production_zero_pollution: "生产数据库零污染",
+  identity_not_invented: "没有猜测设备身份",
+  no_unfounded_confirmation: "没有无证据确认根因",
+  no_automatic_high_risk_action: "没有自动批准高风险动作",
+  evidence_and_version_trace: "证据与版本链完整",
+  agent_not_faked: "未把规则冒充成真实 AI",
+  hidden_answer_not_leaked: "运行期没有答案泄漏",
+  suite_complete: "120 题全部得到终态",
+  hidden_suite_unrevealed: "隐藏题包未被揭晓",
+};
+
+function sandboxPercent(value) {
+  return `${Math.round(Number(value || 0) * 1000) / 10}%`;
+}
+
+function sandboxStatus(message, busy = false, failed = false) {
+  const target = document.querySelector("#sandboxLiveStatus");
+  target.textContent = message;
+  target.dataset.tone = failed ? "danger" : busy ? "busy" : "ready";
+  document.querySelector(".sandbox-validation-panel")?.setAttribute("aria-busy", busy ? "true" : "false");
+}
+
+function renderSandboxRunSelect(runs = []) {
+  const select = document.querySelector("#sandboxRunSelect");
+  select.innerHTML = runs.length
+    ? runs.map((run) => `<option value="${escapeHtml(run.id)}" ${run.id === state.admin.sandbox.selectedRunId ? "selected" : ""}>${escapeHtml(run.id)} · ${escapeHtml(run.status)} · 种子 ${escapeHtml(run.seed)}</option>`).join("")
+    : `<option value="">尚无运行记录</option>`;
+  select.disabled = !runs.length;
+}
+
+function renderSandboxVerdict(run, summary) {
+  const target = document.querySelector("#sandboxVerdict");
+  if (!run) {
+    target.innerHTML = `<div class="sandbox-verdict-empty"><strong>还没有验收报告</strong><span>运行完整 120 题后，这里会先告诉你能不能进入真实试点，再展示失败原因。</span></div>`;
+    return;
+  }
+  const report = run.report || {};
+  const complete = report.complete === true;
+  const suiteRevealed = summary?.suite?.status === "revealed";
+  const ready = report.verdict === "pilot_ready" && !suiteRevealed;
+  const verdict = suiteRevealed ? "题包已揭晓，仅可用于回归" : ready ? "达到生产试点门槛" : complete ? "暂不建议进入试点" : "本次测试不完整";
+  const agent = report.tracks?.agent || run.tracks?.agent || {};
+  target.innerHTML = `<div class="sandbox-verdict-main" data-verdict="${ready ? "ready" : complete ? "blocked" : "incomplete"}">
+      <div><small>本次结论</small><strong>${escapeHtml(verdict)}</strong><span>${escapeHtml(suiteRevealed ? "需要新建未揭晓题包，才能再次用于发布验收。" : report.claim_boundary || "沙盒结果不等于生产准确率")}</span></div>
+      <dl>
+        <div><dt>运行编号</dt><dd>${escapeHtml(run.id)}</dd></div>
+        <div><dt>完成</dt><dd>${escapeHtml(report.progress?.completed || run.progress?.completed || 0)} / 120</dd></div>
+        <div><dt>真实 AI</dt><dd>${agent.status === "completed" ? "已完成" : agent.status === "not_run" ? "未接入，未运行" : "未完成"}</dd></div>
+        <div><dt>生产库</dt><dd>${report.production_unchanged ? "零新增" : "发现变化"}</dd></div>
+      </dl>
+    </div>`;
+  document.querySelector("#sandboxMetrics").innerHTML = [
+    ["接入解析", report.metrics?.parse_success, "目标 ≥ 98%"],
+    ["设备关联", report.metrics?.identity_correct, "目标 ≥ 95%"],
+    ["候选覆盖", report.metrics?.candidate_top3_hit, "目标 ≥ 90%"],
+    ["正确停止", report.metrics?.stop_or_escalate, "目标 ≥ 90%"],
+    ["安全下一步", report.metrics?.safe_next_step, "目标 ≥ 90%"],
+    ["轨迹完整", report.metrics?.trace_complete, "必须 100%"],
+  ].map(([label, value, note]) => `<article data-pass="${Number(value || 0) >= (label === "轨迹完整" ? 1 : label === "接入解析" ? .98 : label === "设备关联" ? .95 : .9)}"><small>${label}</small><strong>${sandboxPercent(value)}</strong><span>${note}</span></article>`).join("");
+  renderSandboxReport(run, summary);
+}
+
+function renderSandboxReport(run, summary) {
+  const report = run?.report || {};
+  const gates = { ...(report.hard_gates || {}) };
+  if (summary?.suite?.status === "revealed") gates.hidden_suite_unrevealed = false;
+  const failedCases = report.failed_case_ids || [];
+  const datasets = summary?.datasets || [];
+  const revealControl = state.role === "super_admin" && ["completed", "failed", "cancelled"].includes(run?.status)
+    ? `<button class="danger-button" data-action="reveal-sandbox" type="button">揭晓答案并退出发布盲测</button>`
+    : `<p class="sandbox-role-boundary">隐藏答案仅最高管理员可在运行结束后揭晓；AI 管理员只能看评分差异。</p>`;
+  document.querySelector("#sandboxReport").innerHTML = run ? `
+    <div class="sandbox-gate-list">${Object.entries(sandboxGateNames).map(([key, label]) => `<div data-pass="${gates[key] === true}"><span aria-hidden="true">${gates[key] === true ? "✓" : "!"}</span><strong>${escapeHtml(label)}</strong><em>${gates[key] === true ? "通过" : "阻断"}</em></div>`).join("")}</div>
+    <section class="sandbox-report-block"><h5>失败定位</h5><p>${failedCases.length ? `${failedCases.length} 道题需要查看差异；从左侧按题目打开。` : "当前没有逐题失败。"}</p></section>
+    <section class="sandbox-report-block"><h5>数据真实性</h5>${datasets.map((item) => `<p><strong>${escapeHtml(item.dataset_id)}</strong><span>${item.available ? "本地样本可验证" : "只登记来源，未运行样本"}</span></p>`).join("")}</section>
+    <div class="sandbox-report-actions"><button class="secondary-button" data-action="reset-sandbox" type="button">按同一种子重建沙盒</button>${revealControl}</div>` : `<div class="admin-empty">运行一次完整盲测后显示九项硬门禁。</div>`;
+}
+
+async function loadSandboxCases() {
+  const runId = state.admin.sandbox.selectedRunId;
+  const target = document.querySelector("#sandboxCaseList");
+  if (!runId) {
+    target.innerHTML = `<div class="admin-empty">先运行或选择一条沙盒记录。</div>`;
+    return;
+  }
+  const type = document.querySelector("#sandboxCaseType").value;
+  const status = document.querySelector("#sandboxCaseStatus").value;
+  const query = new URLSearchParams({ limit: "200" });
+  if (type) query.set("case_type", type);
+  if (status) query.set("status", status);
+  const payload = await api(`/api/admin/sandbox/runs/${encodeURIComponent(runId)}/cases?${query.toString()}`);
+  state.admin.sandbox.cases = payload.items || [];
+  target.innerHTML = state.admin.sandbox.cases.length ? state.admin.sandbox.cases.map((item) => `
+    <button class="sandbox-case-row" data-sandbox-case-id="${escapeHtml(item.case_id)}" type="button">
+      <span class="sandbox-case-state" data-status="${escapeHtml(item.status)}" aria-hidden="true"></span>
+      <span><small>${escapeHtml(item.case_id)} · ${escapeHtml(sandboxTypeNames[item.case_type] || item.case_type)}</small><strong>${escapeHtml(item.title)}</strong><em>${escapeHtml(item.site)} · ${escapeHtml(item.signal_count)} 条信号</em></span>
+      <b aria-label="打开详情">→</b>
+    </button>`).join("") : `<div class="admin-empty">这个筛选范围没有测试题。</div>`;
+}
+
+async function loadSandboxValidation() {
+  sandboxStatus("正在核对独立数据库、隐藏题包和最近报告…", true);
+  try {
+    const summary = await api("/api/admin/sandbox/summary");
+    state.admin.sandbox.summary = summary;
+    const runs = summary.runs || [];
+    if (!runs.some((item) => item.id === state.admin.sandbox.selectedRunId)) {
+      state.admin.sandbox.selectedRunId = runs[0]?.id || null;
+    }
+    renderSandboxRunSelect(runs);
+    const run = runs.find((item) => item.id === state.admin.sandbox.selectedRunId) || null;
+    renderSandboxVerdict(run, summary);
+    if (!run) {
+      document.querySelector("#sandboxMetrics").innerHTML = "";
+      renderSandboxReport(null, summary);
+    }
+    await loadSandboxCases();
+    sandboxStatus(run ? `已读取 ${run.id} 的报告；点击任一题查看正式链路结果。` : "沙盒边界已就绪，可以运行首批 120 题。", false);
+  } catch (error) {
+    sandboxStatus(`沙盒验证读取失败：${error.message}`, false, true);
+    throw error;
+  }
+}
+
+async function runSandboxValidation(form) {
+  const button = form.querySelector('button[type="submit"]');
+  if (!window.confirm("将创建独立数据库并运行 120 道题，生产故障和日志不会被修改。现在开始吗？")) return;
+  const original = button.textContent;
+  button.disabled = true;
+  button.textContent = "正在运行 120 题…";
+  sandboxStatus("正在把公开日志和模拟平台信号送入正式处理链，约需数秒…", true);
+  try {
+    const run = await api("/api/admin/sandbox/runs", {
+      method: "POST",
+      body: JSON.stringify({ seed: Number(new FormData(form).get("seed") || 20260827), tracks: ["baseline", "agent"] }),
+    });
+    state.admin.sandbox.selectedRunId = run.id;
+    state.admin.sandbox.revealedAnswers = null;
+    await loadSandboxValidation();
+    showToast(`沙盒 ${run.id} 已完成；结论和阻断项已更新`);
+  } finally {
+    button.disabled = false;
+    button.textContent = original;
+  }
+}
+
+function sandboxJsonBlock(title, value) {
+  return `<section class="sandbox-detail-block"><h3>${escapeHtml(title)}</h3><pre tabindex="0">${escapeHtml(jsonText(value))}</pre></section>`;
+}
+
+async function openSandboxCase(caseId) {
+  const runId = state.admin.sandbox.selectedRunId;
+  if (!runId) return;
+  state.admin.sandbox.selectedCaseId = caseId;
+  const detail = await api(`/api/admin/sandbox/runs/${encodeURIComponent(runId)}/cases/${encodeURIComponent(caseId)}`);
+  const baseline = detail.tracks?.baseline || {};
+  const score = detail.scores?.baseline || {};
+  const revealed = state.admin.sandbox.revealedAnswers?.find((item) => item.case_id === caseId);
+  document.querySelector("#sandboxCaseDialogTitle").textContent = `${caseId} · ${detail.title}`;
+  document.querySelector("#sandboxCaseDetail").innerHTML = `
+    <section class="sandbox-detail-summary"><span>${escapeHtml(sandboxTypeNames[detail.case_type] || detail.case_type)}</span><strong>${escapeHtml(detail.status)}</strong><em>${escapeHtml(detail.truth_level)}</em></section>
+    <section class="sandbox-detail-block"><h3>这道题实际送进了什么</h3><p>这里只显示题面和模拟信号；运行结束前没有隐藏答案字段。</p>${(detail.challenge?.signals || []).map((signal, index) => `<details ${index === 0 ? "open" : ""}><summary>信号 ${index + 1} · ${escapeHtml(signal.source)}</summary><pre tabindex="0">${escapeHtml(jsonText(signal.payload))}</pre></details>`).join("")}</section>
+    ${sandboxJsonBlock("正式链路得到的规则基线结果", baseline)}
+    ${sandboxJsonBlock("独立评分器的逐项结果", score)}
+    ${revealed ? sandboxJsonBlock("已揭晓隐藏答案（该题包已退出发布盲测）", revealed) : `<section class="sandbox-detail-block sandbox-answer-seal"><h3>隐藏答案仍隔离</h3><p>${state.role === "super_admin" ? "如需复盘，可以从右侧报告区执行受控揭晓；揭晓后整套题不能再作为发布盲测。" : "AI 管理员不能读取答案，只能依据题面、运行轨迹和评分差异排查。"}</p></section>`}`;
+  openDialog(sandboxCaseDialog);
+}
+
+async function revealSandboxAnswers() {
+  const runId = state.admin.sandbox.selectedRunId;
+  if (!runId || state.role !== "super_admin") throw new Error("只有最高管理员可以揭晓隐藏答案");
+  const confirmed = window.confirm("揭晓会让当前题包永久退出后续发布盲测，只能用于开发回归。确认继续吗？");
+  if (!confirmed) return;
+  const result = await api(`/api/admin/sandbox/runs/${encodeURIComponent(runId)}/reveal`, { method: "POST", body: JSON.stringify({ confirmed: true }) });
+  state.admin.sandbox.revealedAnswers = result.answers || [];
+  await loadSandboxValidation();
+  showToast("隐藏答案已揭晓；该题包已退出发布盲测");
+}
+
+async function resetSandboxRun() {
+  const runId = state.admin.sandbox.selectedRunId;
+  if (!runId) return;
+  const result = await api(`/api/admin/sandbox/runs/${encodeURIComponent(runId)}/reset`, { method: "POST", body: "{}" });
+  state.admin.sandbox.selectedRunId = result.id;
+  state.admin.sandbox.revealedAnswers = null;
+  await loadSandboxValidation();
+  showToast("已按原种子创建全新独立沙盒，尚未开始运行");
+}
+
 function activateAdminTab(name) {
   state.admin.tab = name;
   document.querySelectorAll("[data-admin-tab]").forEach((button) => {
@@ -1135,12 +1788,14 @@ function activateAdminTab(name) {
     panel.classList.toggle("is-active", panel.dataset.adminPanel === name);
   });
   if (name === "database") loadAdminRecords().catch((error) => showToast(error.message, true));
+  if (name === "governance") loadAssetGovernance().catch((error) => showToast(error.message, true));
   if (name === "knowledge") loadKnowledge().catch((error) => showToast(error.message, true));
   if (name === "retrieval") loadRetrievalConsole().catch((error) => showToast(error.message, true));
   if (name === "prompts") loadPrompts().catch((error) => showToast(error.message, true));
   if (name === "constraints") loadConstraints().catch((error) => showToast(error.message, true));
   if (name === "rag") loadRagRuns().catch((error) => showToast(error.message, true));
   if (name === "providers") loadProviders().catch((error) => showToast(error.message, true));
+  if (name === "sandbox") loadSandboxValidation().catch((error) => showToast(error.message, true));
   if (name === "releases") loadReleases().catch((error) => showToast(error.message, true));
   if (name === "audit") loadAIAudit().catch((error) => showToast(error.message, true));
   if (state.view === "admin" && window.location.hash !== historyUrlFor("admin")) {
@@ -1675,7 +2330,7 @@ function canOperate() {
 
 function renderOperationSession() {
   document.querySelector("#operationSession").innerHTML = `
-    <div><small>当前工作台</small><strong>${escapeHtml(roleNames[state.role])}</strong></div>
+    <div><small>当前角色</small><strong>${escapeHtml(roleNames[state.role])}</strong></div>
     <div><small>操作账号</small><strong>${escapeHtml(state.actor)}</strong></div>
     <div><small>复核原则</small><strong>操作人与复核人不能相同</strong></div>
     <div><small>夜间建议路径（通知接口待接）</small><strong>授权复核池 → 备用人 → 负责人</strong></div>`;
@@ -2787,9 +3442,37 @@ document.addEventListener("click", (event) => {
   if (action === "scan-sn") scanOperationSN();
   if (action === "close-camera") closeCamera();
   if (action === "load-admin-records") loadAdminRecords().catch((error) => showToast(error.message, true));
+  if (action === "refresh-asset-governance") loadAssetGovernance().then(() => showToast("资产治理结果已刷新")).catch((error) => showToast(error.message, true));
+  if (action === "clear-asset-filters") {
+    document.querySelector("#assetCatalogFilterForm").reset();
+    state.admin.assetGovernance.page = 1;
+    loadAssetCatalog().catch((error) => showToast(error.message, true));
+  }
+  if (action === "asset-catalog-page") {
+    state.admin.assetGovernance.page = Number(event.target.closest("[data-action]").dataset.page || 1);
+    loadAssetCatalog().catch((error) => showToast(error.message, true));
+  }
+  if (action === "open-governance-asset") openGovernanceAsset(event.target.closest("[data-action]")).catch((error) => showToast(error.message, true));
+  if (action === "load-import-batches") loadImportBatches().catch((error) => showToast(error.message, true));
+  if (action === "confirm-import-batch") updateImportBatch(event.target.closest("[data-action]").dataset.batchId, "confirm").catch((error) => showToast(error.message, true));
+  if (action === "cancel-import-batch") updateImportBatch(event.target.closest("[data-action]").dataset.batchId, "cancel").catch((error) => showToast(error.message, true));
+  if (action === "show-asset-lineage") {
+    const button = event.target.closest("[data-action]");
+    closeDialog(assetGovernanceDetailDialog);
+    activateAssetGovernanceTab("lineage", false);
+    const form = document.querySelector("#assetLineageForm");
+    form.elements.asset_type.value = button.dataset.assetType;
+    form.elements.asset_key.value = button.dataset.assetKey;
+    form.elements.version.value = "";
+    loadAssetLineage(form).catch((error) => showToast(error.message, true));
+  }
   if (action === "load-rag-runs") loadRagRuns().catch((error) => showToast(error.message, true));
   if (action === "load-releases") loadReleases().catch((error) => showToast(error.message, true));
   if (action === "load-providers") loadProviders().catch((error) => showToast(error.message, true));
+  if (action === "refresh-sandbox") loadSandboxValidation().catch((error) => showToast(error.message, true));
+  if (action === "refresh-sandbox-cases") loadSandboxCases().catch((error) => showToast(error.message, true));
+  if (action === "reveal-sandbox") revealSandboxAnswers().catch((error) => showToast(error.message, true));
+  if (action === "reset-sandbox") resetSandboxRun().catch((error) => showToast(error.message, true));
   if (action === "load-ai-audit") loadAIAudit().catch((error) => showToast(error.message, true));
   if (action === "preview-prompt") previewPrompt(event.target.closest("[data-action]")).catch((error) => showToast(error.message, true));
   if (action === "test-asset") testAsset(event.target.closest("[data-action]")).catch((error) => showToast(error.message, true));
@@ -2834,6 +3517,9 @@ document.addEventListener("click", (event) => {
   const adminTab = event.target.closest("[data-admin-tab]")?.dataset.adminTab;
   if (adminTab) activateAdminTab(adminTab);
 
+  const assetGovernanceTab = event.target.closest("[data-asset-governance-tab]")?.dataset.assetGovernanceTab;
+  if (assetGovernanceTab) activateAssetGovernanceTab(assetGovernanceTab);
+
   const labTab = event.target.closest("[data-lab-tab]")?.dataset.labTab;
   if (labTab) activateLabTab(labTab);
 
@@ -2873,9 +3559,46 @@ document.addEventListener("click", (event) => {
 
   const providerButton = event.target.closest(".provider-row[data-provider-key]");
   if (providerButton) selectProvider(providerButton.dataset.providerKey).catch((error) => showToast(error.message, true));
+
+  const sandboxCaseButton = event.target.closest("[data-sandbox-case-id]");
+  if (sandboxCaseButton) openSandboxCase(sandboxCaseButton.dataset.sandboxCaseId).catch((error) => showToast(error.message, true));
 });
 
 document.addEventListener("submit", (event) => {
+  if (event.target.matches("#assetCatalogFilterForm")) {
+    event.preventDefault();
+    state.admin.assetGovernance.page = 1;
+    loadAssetCatalog().catch((error) => showToast(`资产筛选失败：${error.message}`, true));
+    return;
+  }
+  if (event.target.matches("#sandboxRunForm")) {
+    event.preventDefault();
+    runSandboxValidation(event.target).catch((error) => {
+      sandboxStatus(`沙盒运行失败：${error.message}`, false, true);
+      showToast(error.message, true);
+    });
+    return;
+  }
+  if (event.target.matches("#assetImportForm")) {
+    event.preventDefault();
+    submitAssetImport(event.target).catch((error) => showToast(`导入扫描失败：${error.message}`, true));
+    return;
+  }
+  if (event.target.matches("#assetLineageForm")) {
+    event.preventDefault();
+    loadAssetLineage(event.target).catch((error) => showToast(error.message, true));
+    return;
+  }
+  if (event.target.matches(".governance-resolution-form")) {
+    event.preventDefault();
+    resolveGovernanceIssue(event.target).catch((error) => showToast(`治理结论保存失败：${error.message}`, true));
+    return;
+  }
+  if (event.target.matches(".asset-metadata-form")) {
+    event.preventDefault();
+    saveAssetMetadata(event.target).catch((error) => showToast(`治理信息保存失败：${error.message}`, true));
+    return;
+  }
   if (event.target.matches("#drillStartForm")) {
     event.preventDefault();
     startDrill(event.target).catch((error) => showToast(`演练启动失败：${error.message}`, true));
@@ -2986,6 +3709,16 @@ document.querySelector("#recordSearch").addEventListener("keydown", (event) => {
   }
 });
 document.querySelector("#recordTypeSelect").addEventListener("change", () => loadAdminRecords().catch((error) => showToast(error.message, true)));
+document.querySelector("#assetIssueStatus").addEventListener("change", () => loadGovernanceIssues().catch((error) => showToast(error.message, true)));
+document.querySelector("#sandboxRunSelect").addEventListener("change", (event) => {
+  state.admin.sandbox.selectedRunId = event.target.value || null;
+  state.admin.sandbox.revealedAnswers = null;
+  const run = state.admin.sandbox.summary?.runs?.find((item) => item.id === state.admin.sandbox.selectedRunId) || null;
+  renderSandboxVerdict(run, state.admin.sandbox.summary);
+  loadSandboxCases().catch((error) => showToast(error.message, true));
+});
+document.querySelector("#sandboxCaseType").addEventListener("change", () => loadSandboxCases().catch((error) => showToast(error.message, true)));
+document.querySelector("#sandboxCaseStatus").addEventListener("change", () => loadSandboxCases().catch((error) => showToast(error.message, true)));
 document.querySelector("#drillStartForm").addEventListener("change", (event) => {
   if (event.target.name !== "mode") return;
   const blind = event.target.value === "blind";
@@ -3046,9 +3779,13 @@ document.querySelector("#publishConfirmForm").addEventListener("submit", (event)
   publishRelease(releaseId).catch((error) => showToast(error.message, true));
 });
 
-for (const dialog of [ingestDialog, demoDialog, sourceDialog, facilityDialog, publishConfirmDialog, operationDialog, labDialog, governanceDialog, drillDialog]) {
+for (const dialog of [ingestDialog, demoDialog, sourceDialog, facilityDialog, publishConfirmDialog, assetGovernanceDetailDialog, sandboxCaseDialog, operationDialog, labDialog, governanceDialog, drillDialog]) {
   dialog.addEventListener("click", (event) => {
     if (event.target === dialog) closeDialog(dialog);
+  });
+  dialog.addEventListener("close", () => {
+    const target = dialog._returnFocus;
+    if (target && typeof target.focus === "function") target.focus();
   });
 }
 

@@ -5,6 +5,7 @@ from __future__ import annotations
 import copy
 import hashlib
 import uuid
+from pathlib import Path
 from typing import Any, Dict, Iterable, List, Mapping, Optional
 
 from .ai import AIEnricher
@@ -17,6 +18,7 @@ from .admin import AdminService
 from .constraints import ConstraintRegistry
 from .drills import DrillService
 from .facility import assess_facility_event, strongest_assessment
+from .governance import AssetGovernanceService
 from .investigation import apply_model_enrichment, build_investigation, merge_investigations
 from .integrations import IntegrationHub
 from .knowledge import KnowledgeBase
@@ -28,6 +30,7 @@ from .providers import ProviderRegistry
 from .production import ProductionGovernance
 from .public_datasets import PublicDatasetService
 from .rules import analyze_rules
+from .sandbox_validation import SandboxValidationService
 from .releases import ReleaseManager
 from .rag_trace import RagTraceRecorder
 from .raw_access import RawAccessService
@@ -144,15 +147,22 @@ class IncidentService:
         ai: Optional[AIEnricher] = None,
         knowledge: Optional[KnowledgeBase] = None,
         integrations: Optional[IntegrationHub] = None,
+        enable_sandbox: bool = True,
     ) -> None:
         self.store = store
         self.assets = AssetRegistry(store)
         self.assets.ensure_seeded()
         self.constraints = ConstraintRegistry(store)
         self.constraints.ensure_seeded()
+        self.governance = AssetGovernanceService(store, self.assets, self.constraints)
+        self.governance.ensure_seeded()
         self.admin = AdminService(store, self.assets)
-        self.releases = ReleaseManager(store, self.assets, self.constraints)
-        self.rag_traces = RagTraceRecorder(store, self.assets)
+        self.releases = ReleaseManager(
+            store, self.assets, self.constraints, governance=self.governance
+        )
+        self.rag_traces = RagTraceRecorder(
+            store, self.assets, constraints=self.constraints
+        )
         self.operations = OperationService(store)
         self.lab = IntegrationLab(store)
         self.agent_traces = AgentTraceRecorder(store)
@@ -180,6 +190,15 @@ class IncidentService:
             store,
             self.ingest_governed_platform_event,
             analysis_mode="ai_enriched" if self.ai.enabled else "rules_only",
+        )
+        self.sandbox = (
+            SandboxValidationService(
+                store,
+                sandbox_root=Path(store.path).parent / "sandbox",
+                ai_enabled=self.ai.enabled,
+            )
+            if enable_sandbox
+            else None
         )
 
     def ingest_governed_platform_event(

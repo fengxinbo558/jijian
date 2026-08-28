@@ -1,8 +1,12 @@
 __pycache__/
 *.py[cod]
 .DS_Store
+.superpowers/
 data/*.db
 data/*.db-*
 data/backups/
 data/public-datasets/cache/
+data/sandbox/control.db*
+data/sandbox/runs/
+data/sandbox/secrets/
 .env

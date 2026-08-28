@@ -8,14 +8,21 @@ import uuid
 from typing import Any, Dict, Mapping, Optional
 
 from .assets import AssetRegistry
+from .constraints import ConstraintRegistry
 from .models import utc_now
 from .store import IncidentStore, _dump, _load
 
 
 class RagTraceRecorder:
-    def __init__(self, store: IncidentStore, assets: AssetRegistry) -> None:
+    def __init__(
+        self,
+        store: IncidentStore,
+        assets: AssetRegistry,
+        constraints: Optional[ConstraintRegistry] = None,
+    ) -> None:
         self.store = store
         self.assets = assets
+        self.constraints = constraints
 
     def record(self, incident_id: str, investigation: Mapping[str, Any]) -> str:
         run_id = "RAG-" + uuid.uuid4().hex[:12].upper()
@@ -97,6 +104,28 @@ class RagTraceRecorder:
                         _dump(retrieval_details),
                     ),
                 )
+            constraint_version = (
+                self.constraints.published_version() if self.constraints is not None else "built-in"
+            )
+            connection.execute(
+                """
+                INSERT INTO ai_runtime_snapshots (
+                    id, run_type, run_id, knowledge_version,
+                    prompt_versions_json, constraint_versions_json,
+                    model_json, capabilities_json, created_at
+                ) VALUES (?, 'rag', ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    "SNAP-" + uuid.uuid4().hex[:12].upper(),
+                    run_id,
+                    knowledge_version,
+                    _dump({"hypothesis": prompt_version}),
+                    _dump({"investigation-policy": constraint_version}),
+                    _dump({"provider": model_provider, "mode": mode}),
+                    _dump(retrieval.get("capabilities", [])),
+                    now,
+                ),
+            )
         return run_id
 
     @staticmethod
@@ -199,6 +228,9 @@ class RagTraceRecorder:
             hits = connection.execute(
                 "SELECT * FROM rag_hits WHERE run_id = ? ORDER BY rank", (run_id,)
             ).fetchall()
+            snapshot = connection.execute(
+                "SELECT * FROM ai_runtime_snapshots WHERE run_id = ?", (run_id,)
+            ).fetchone()
         result = dict(run)
         result["steps"] = [
             {
@@ -223,4 +255,22 @@ class RagTraceRecorder:
             }
             for row in hits
         ]
+        if snapshot is not None:
+            result["asset_snapshot"] = {
+                **{
+                    key: snapshot[key]
+                    for key in snapshot.keys()
+                    if key
+                    not in {
+                        "prompt_versions_json",
+                        "constraint_versions_json",
+                        "model_json",
+                        "capabilities_json",
+                    }
+                },
+                "prompt_versions": _load(snapshot["prompt_versions_json"], {}),
+                "constraint_versions": _load(snapshot["constraint_versions_json"], {}),
+                "model": _load(snapshot["model_json"], {}),
+                "capabilities": _load(snapshot["capabilities_json"], []),
+            }
         return result
